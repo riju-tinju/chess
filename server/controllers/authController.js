@@ -1,6 +1,9 @@
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Helper to generate token
 const generateToken = (userId) => {
@@ -93,5 +96,89 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error during login', message: error.message });
+  }
+};
+
+// @desc    Authenticate user via Google Sign-In token
+// @route   POST /api/auth/google
+// @access  Public
+export const googleLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({ error: 'Google ID Token is required' });
+    }
+
+    let payload;
+
+    // SWR or fallback token verification if Google Client ID is not explicitly set in dev
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      console.warn("⚠️ GOOGLE_CLIENT_ID env variable not set. Using google tokeninfo fallback endpoint.");
+      const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+      if (!response.ok) {
+        return res.status(400).json({ error: 'Invalid Google ID Token' });
+      }
+      payload = await response.json();
+    } else {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    }
+
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email address not provided by Google account' });
+    }
+
+    // Find existing user by googleId or email
+    let user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+    if (user) {
+      // Link Google authentication to existing email/password account if unregistered
+      let hasUpdates = false;
+      if (!user.googleId) {
+        user.googleId = googleId;
+        hasUpdates = true;
+      }
+      if (!user.avatarUrl && picture) {
+        user.avatarUrl = picture;
+        hasUpdates = true;
+      }
+      if (hasUpdates) {
+        await user.save();
+      }
+    } else {
+      // Create new account
+      let uniqueUsername = name ? name.toLowerCase().replace(/[^a-z0-9]/g, '') : 'player';
+      const usernameExists = await User.findOne({ username: uniqueUsername });
+      if (usernameExists) {
+        uniqueUsername = `${uniqueUsername}${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      user = await User.create({
+        username: uniqueUsername,
+        email,
+        googleId,
+        avatarUrl: picture || '',
+        isPremium: false,
+      });
+    }
+
+    res.status(200).json({
+      token: generateToken(user._id),
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        isPremium: user.isPremium,
+        avatarUrl: user.avatarUrl,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error during Google Sign-in', message: error.message });
   }
 };
