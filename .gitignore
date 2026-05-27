@@ -1,0 +1,33 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Environment & Secrets (CRITICAL SECURITY)
+.env
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+.env.test
+.env.test.local
+*.env
+
+# Capacitor Android/iOS builds & caches
+/ios/App/public
+/android/app/src/main/assets/public
+/android/app/build
+/ios/App/build
+.gradle/
+capacitor.config.json.tmp
+
+# IDE / Editor configurations
+.idea/
+.vscode/
+*.suo
+.DS_Store
+Thumbs.db
