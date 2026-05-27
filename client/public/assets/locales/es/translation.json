@@ -1,0 +1,19 @@
+{
+  "tabs": {
+    "play": "Jugar",
+    "learn": "Aprender",
+    "analyze": "Analizar",
+    "games": "Partidas",
+    "profile": "Perfil"
+  },
+  "play": {
+    "title": "La Sala Privada",
+    "subtitle": "Entorno de ajedrez inmersivo sin distracciones",
+    "new_game": "Nueva Partida",
+    "daily_challenge": "Desafío Diario"
+  },
+  "games": {
+    "title": "Historial de Partidas",
+    "sync": "Sincronizar Plataformas"
+  }
+}

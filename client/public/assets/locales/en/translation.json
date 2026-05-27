@@ -1,0 +1,19 @@
+{
+  "tabs": {
+    "play": "Play",
+    "learn": "Learn",
+    "analyze": "Analyze",
+    "games": "Games",
+    "profile": "Profile"
+  },
+  "play": {
+    "title": "The Private Room",
+    "subtitle": "Immersive zero-distraction chess environment",
+    "new_game": "New Game",
+    "daily_challenge": "Daily Challenge"
+  },
+  "games": {
+    "title": "Game History",
+    "sync": "Sync Platforms"
+  }
+}
