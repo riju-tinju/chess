@@ -47,13 +47,15 @@ import {
   micOutline,
   chevronForwardOutline,
   arrowBackOutline,
-  flashOutline
+  flashOutline,
+  sunnyOutline,
+  moonOutline
 } from 'ionicons/icons';
 import { StockfishEngine } from '../services/stockfishService';
 import { useUserStore } from '../store/useUserStore';
 
 type ActiveView = 'dashboard' | 'setup' | 'board';
-type GameMode = 'computer' | 'bluetooth' | 'friend';
+type GameMode = 'computer' | 'friend' | 'bluetooth';
 type ChessColor = 'white' | 'black' | 'random';
 
 interface RecentMatch {
@@ -75,6 +77,9 @@ interface BluetoothDevice {
 const PlayTab: React.FC = () => {
   const { t } = useTranslation();
   const currentUser = useUserStore((state) => state.currentUser);
+
+  // Dual Themes State: Premium Light Mode as Default core experience
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
 
   // View state machine
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
@@ -120,6 +125,15 @@ const PlayTab: React.FC = () => {
     { id: 'dev_2', name: 'OnePlus 12 (Discovered)', status: 'discovered' },
     { id: 'dev_3', name: 'Pixel 8 Pro (Discovered)', status: 'discovered' }
   ]);
+
+  // Sync dual theme selection globally
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.add('dark-theme');
+    } else {
+      document.body.classList.remove('dark-theme');
+    }
+  }, [isDarkMode]);
 
   // Initialize stockfish
   useEffect(() => {
@@ -292,36 +306,83 @@ const PlayTab: React.FC = () => {
     setIsClockRunning(true);
   };
 
+  // Bluetooth scanning triggers
+  const startBluetoothScan = () => {
+    setIsBtScanning(true);
+    setToastMessage('Searching local bluetooth frequencies...');
+    setTimeout(() => {
+      setIsBtScanning(false);
+    }, 3000);
+  };
+
+  const connectToBtDevice = (device: BluetoothDevice) => {
+    setBtDevices((prev) => prev.map((d) => d.id === device.id ? { ...d, status: 'connecting' } : d));
+    setTimeout(() => {
+      setBtDevices((prev) => prev.map((d) => d.id === device.id ? { ...d, status: 'paired' } : d));
+      setConnectedBtDevice(device.name);
+      setToastMessage(`Connected via Bluetooth to ${device.name}! Ready to play locally.`);
+    }, 1500);
+  };
+
   return (
     <IonPage>
-      {/* Luxury Minimalist Header */}
+      {/* Luxury Minimalist Header with dynamic theme toggle */}
       <IonHeader className="ion-no-border">
         <IonToolbar style={{ 
-          '--background': '#0F111A', 
-          '--color': '#ECEFF4',
-          padding: '10px 10px 0 10px'
+          '--background': 'var(--ion-background-color)', 
+          '--color': 'var(--ion-text-color)',
+          padding: '10px 10px 0 10px',
+          transition: 'background-color 0.3s ease'
         }}>
-          {activeView !== 'dashboard' && (
+          {activeView !== 'dashboard' ? (
             <IonButton 
               slot="start" 
               fill="clear" 
-              style={{ '--color': '#C9A84C', fontWeight: '500', fontSize: '14px' }}
+              style={{ '--color': 'var(--luxury-gold)', fontWeight: '500', fontSize: '14px' }}
               onClick={() => setActiveView(activeView === 'board' ? 'setup' : 'dashboard')}
             >
               <IonIcon icon={arrowBackOutline} slot="start" style={{ fontSize: '16px' }} />
               Back
             </IonButton>
+          ) : (
+            /* Sleek Editorial Header Logo Placeholder */
+            <div slot="start" style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              fontSize: '12px', 
+              fontWeight: '800', 
+              letterSpacing: '2px',
+              color: 'var(--ion-text-color)',
+              paddingLeft: '10px'
+            }}>
+              ◈ CHESS ROOM
+            </div>
           )}
-          {activeView === 'board' && (
-            <IonTitle style={{ fontWeight: '700', fontSize: '16px', letterSpacing: '0.5px' }}>Live Battle</IonTitle>
-          )}
-          {activeView === 'setup' && (
-            <IonTitle style={{ fontWeight: '700', fontSize: '16px', letterSpacing: '0.5px' }}>Game Setup</IonTitle>
-          )}
+          
+          {/* Dual Theme Switcher (Tucked into top-right header) */}
+          <div slot="end" onClick={() => setIsDarkMode(!isDarkMode)} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '10px',
+            fontWeight: '700',
+            letterSpacing: '1px',
+            cursor: 'pointer',
+            paddingRight: '10px',
+            color: 'var(--luxury-gold)',
+            textTransform: 'uppercase'
+          }}>
+            <IonIcon icon={isDarkMode ? sunnyOutline : moonOutline} style={{ fontSize: '14px' }} />
+            <span>{isDarkMode ? 'LIGHT' : 'DARK'}</span>
+          </div>
         </IonToolbar>
       </IonHeader>
 
-      <IonContent fullscreen style={{ '--background': '#0F111A' }}>
+      <IonContent fullscreen style={{ 
+        '--background': 'var(--ion-background-color)',
+        transition: 'background-color 0.3s ease'
+      }}>
 
         {/* ========================================================= */}
         {/* VIEW 1: EDITORIAL LUXURY MINIMALIST DASHBOARD VIEW        */}
@@ -330,7 +391,7 @@ const PlayTab: React.FC = () => {
           <div className="ion-padding" style={{ 
             maxWidth: '520px', 
             margin: '0 auto', 
-            color: '#ECEFF4',
+            color: 'var(--ion-text-color)',
             paddingTop: '20px'
           }}>
             
@@ -343,8 +404,8 @@ const PlayTab: React.FC = () => {
               padding: '0 5px'
             }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: '500', color: '#C9A84C', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  THE PRIVATE ROOM
+                <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--luxury-gold)', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                  THE GRANDMASTER LIBRARY
                 </span>
                 
                 {/* Single sentence mixed font-weights to emphasize focus keyword exactly */}
@@ -352,8 +413,9 @@ const PlayTab: React.FC = () => {
                   fontSize: '26px', 
                   margin: 0, 
                   letterSpacing: '-0.5px',
-                  color: '#ECEFF4',
-                  lineHeight: '1.2'
+                  color: 'var(--ion-text-color)',
+                  lineHeight: '1.2',
+                  fontWeight: '300'
                 }}>
                   Hello, <span style={{ fontWeight: '800' }}>{currentUser?.username || 'Guest Player'}</span>
                 </h1>
@@ -361,27 +423,28 @@ const PlayTab: React.FC = () => {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '9px', color: '#A0A6B5', display: 'block', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Global Rank</span>
-                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#C9A84C' }}>1,850 ELO</span>
+                  <span style={{ fontSize: '9px', color: 'var(--luxury-text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Global Rating</span>
+                  <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--luxury-gold)' }}>1,850 ELO</span>
                 </div>
                 <IonAvatar style={{ 
                   width: '44px', 
                   height: '44px', 
-                  border: '1.5px solid #C9A84C',
+                  border: '1.5px solid var(--luxury-gold)',
                   padding: '2px',
-                  backgroundColor: '#1E202B'
+                  backgroundColor: 'var(--luxury-card-bg)'
                 }}>
                   <div style={{
                     width: '100%',
                     height: '100%',
                     borderRadius: '50%',
-                    backgroundColor: '#C9A84C',
-                    color: '#0F111A',
+                    backgroundColor: 'var(--luxury-gold)',
+                    color: 'var(--ion-background-color)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: '800',
-                    fontSize: '15px'
+                    fontSize: '15px',
+                    transition: 'color 0.3s ease'
                   }}>
                     {(currentUser?.username || 'G')[0].toUpperCase()}
                   </div>
@@ -389,30 +452,34 @@ const PlayTab: React.FC = () => {
               </div>
             </div>
 
-            {/* Primary Action Cards (Soft Oversized Border Radii 24px) */}
+            {/* Asymmetrical Primary Action Cards Grid (Soft Oversized Border Radii 24px) */}
             <IonGrid style={{ padding: 0, marginBottom: '25px' }}>
               <IonRow style={{ margin: '0 -8px' }}>
-                <IonCol size="6" style={{ padding: '0 8px' }}>
+                
+                {/* Card 1: Play Online (size="6") */}
+                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
                       setGameMode('friend');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '155px',
-                      borderRadius: '24px', // Soft Oversized corner
-                      backgroundColor: '#1E202B', // Muted card background
-                      padding: '22px', // Breathing room cell padding
+                      height: '165px',
+                      borderRadius: '24px', 
+                      backgroundColor: 'var(--luxury-card-bg)', 
+                      padding: '22px', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      border: '1px solid rgba(255, 255, 255, 0.04)',
-                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
-                      position: 'relative'
+                      border: '1px solid var(--luxury-border)',
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      transition: 'transform 0.2s ease, background-color 0.3s ease'
                     }}
                   >
-                    {/* Minimalist structural accent: elegant Northeast Arrow (↗) tucked into corner */}
+                    {/* Tucked Northeast Arrow (↗) in corner */}
                     <div style={{
                       position: 'absolute',
                       top: '18px',
@@ -420,46 +487,68 @@ const PlayTab: React.FC = () => {
                       width: '26px',
                       height: '26px',
                       borderRadius: '50%',
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      backgroundColor: 'var(--luxury-gold-subtle)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
-                      color: '#C9A84C',
-                      border: '1px solid rgba(255, 255, 255, 0.05)'
+                      color: 'var(--luxury-gold)',
+                      border: '1px solid var(--luxury-border)',
+                      zIndex: 2
                     }}>
                       ↗
                     </div>
 
-                    <IonIcon icon={globeOutline} style={{ fontSize: '26px', color: '#C9A84C' }} />
-                    <div>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: '#ECEFF4' }}>Play Online</h3>
-                      <p style={{ fontSize: '10px', color: '#A0A6B5', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Challenge players nearby or globally.</p>
+                    {/* Placeholder Vector Graphic 1: Fine-Line Globe Wireframe (Bottom-Right aligned) */}
+                    <svg style={{
+                      position: 'absolute',
+                      bottom: '-15px',
+                      right: '-15px',
+                      width: '90px',
+                      height: '90px',
+                      opacity: 0.08,
+                      pointerEvents: 'none',
+                      color: 'var(--ion-text-color)'
+                    }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
+                      <circle cx="50" cy="50" r="40" />
+                      <ellipse cx="50" cy="50" rx="40" ry="15" />
+                      <ellipse cx="50" cy="50" rx="15" ry="40" />
+                      <line x1="50" y1="10" x2="50" y2="90" />
+                      <line x1="10" y1="50" x2="90" y2="50" />
+                    </svg>
+
+                    <IonIcon icon={globeOutline} style={{ fontSize: '26px', color: 'var(--luxury-gold)' }} />
+                    <div style={{ zIndex: 1 }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>Play Online</h3>
+                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Challenge players worldwide in real-time lobbies.</p>
                     </div>
                   </div>
                 </IonCol>
 
-                <IonCol size="6" style={{ padding: '0 8px' }}>
+                {/* Card 2: vs Computer (size="6") */}
+                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
                       setGameMode('computer');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '155px',
-                      borderRadius: '24px', // Soft Oversized corner
-                      backgroundColor: '#1E202B', // Muted card background
-                      padding: '22px', // Breathing room cell padding
+                      height: '165px',
+                      borderRadius: '24px', 
+                      backgroundColor: 'var(--luxury-card-bg)', 
+                      padding: '22px', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      border: '1px solid rgba(255, 255, 255, 0.04)',
-                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
-                      position: 'relative'
+                      border: '1px solid var(--luxury-border)',
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      transition: 'transform 0.2s ease, background-color 0.3s ease'
                     }}
                   >
-                    {/* Minimalist structural accent: elegant Northeast Arrow (↗) tucked into corner */}
+                    {/* Tucked Northeast Arrow (↗) in corner */}
                     <div style={{
                       position: 'absolute',
                       top: '18px',
@@ -467,38 +556,146 @@ const PlayTab: React.FC = () => {
                       width: '26px',
                       height: '26px',
                       borderRadius: '50%',
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      backgroundColor: 'var(--luxury-gold-subtle)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
-                      color: '#C9A84C',
-                      border: '1px solid rgba(255, 255, 255, 0.05)'
+                      color: 'var(--luxury-gold)',
+                      border: '1px solid var(--luxury-border)',
+                      zIndex: 2
                     }}>
                       ↗
                     </div>
 
-                    <IonIcon icon={hardwareChipOutline} style={{ fontSize: '26px', color: '#C9A84C' }} />
-                    <div>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: '#ECEFF4' }}>vs Computer</h3>
-                      <p style={{ fontSize: '10px', color: '#A0A6B5', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Practice offline vs Stockfish engine.</p>
+                    {/* Placeholder Vector Graphic 2: Circuit Chip grid lines (Bottom-Right aligned) */}
+                    <svg style={{
+                      position: 'absolute',
+                      bottom: '-10px',
+                      right: '-10px',
+                      width: '85px',
+                      height: '85px',
+                      opacity: 0.08,
+                      pointerEvents: 'none',
+                      color: 'var(--ion-text-color)'
+                    }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
+                      <rect x="25" y="25" width="50" height="50" rx="8" />
+                      <rect x="38" y="38" width="24" height="24" rx="4" />
+                      <line x1="50" y1="10" x2="50" y2="25" />
+                      <line x1="50" y1="75" x2="50" y2="90" />
+                      <line x1="10" y1="50" x2="25" y2="50" />
+                      <line x1="75" y1="50" x2="90" y2="50" />
+                      <circle cx="50" cy="10" r="3" fill="currentColor" />
+                      <circle cx="50" cy="90" r="3" fill="currentColor" />
+                      <circle cx="10" cy="50" r="3" fill="currentColor" />
+                      <circle cx="90" cy="50" r="3" fill="currentColor" />
+                    </svg>
+
+                    <IonIcon icon={hardwareChipOutline} style={{ fontSize: '26px', color: 'var(--luxury-gold)' }} />
+                    <div style={{ zIndex: 1 }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>vs Computer</h3>
+                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Practice offline vs Stockfish engine settings.</p>
                     </div>
                   </div>
                 </IonCol>
+
+                {/* Card 3: Local Multiplayer (size="12", full-width below them) */}
+                <IonCol size="12" style={{ padding: '0 8px' }}>
+                  <div 
+                    onClick={() => {
+                      setGameMode('bluetooth');
+                      setActiveView('setup');
+                    }}
+                    style={{
+                      height: '115px',
+                      borderRadius: '24px', 
+                      backgroundColor: 'var(--luxury-card-bg)', 
+                      padding: '22px', 
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      border: '1px solid var(--luxury-border)',
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      transition: 'transform 0.2s ease, background-color 0.3s ease'
+                    }}
+                  >
+                    {/* Tucked Northeast Arrow (↗) in corner */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '18px',
+                      right: '18px',
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--luxury-gold-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      color: 'var(--luxury-gold)',
+                      border: '1px solid var(--luxury-border)',
+                      zIndex: 2
+                    }}>
+                      ↗
+                    </div>
+
+                    {/* Placeholder Vector Graphic 3: Dual device pairing waves (Bottom-Right aligned) */}
+                    <svg style={{
+                      position: 'absolute',
+                      bottom: '-5px',
+                      right: '30px',
+                      width: '90px',
+                      height: '90px',
+                      opacity: 0.08,
+                      pointerEvents: 'none',
+                      color: 'var(--ion-text-color)'
+                    }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
+                      <rect x="15" y="30" width="22" height="40" rx="4" />
+                      <rect x="63" y="30" width="22" height="40" rx="4" />
+                      <path d="M45,40 Q50,45 45,50" />
+                      <path d="M55,40 Q50,45 55,50" />
+                      <circle cx="50" cy="45" r="2" fill="currentColor" />
+                    </svg>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '18px', zIndex: 1 }}>
+                      <div style={{
+                        width: '46px',
+                        height: '46px',
+                        borderRadius: '16px',
+                        backgroundColor: 'var(--luxury-gold-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--luxury-gold)'
+                      }}>
+                        <IonIcon icon={bluetoothOutline} style={{ fontSize: '22px' }} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>Local Multiplayer</h3>
+                        <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: 0, fontWeight: '300' }}>Play face-to-face offline via Local Bluetooth antenna.</p>
+                      </div>
+                    </div>
+                  </div>
+                </IonCol>
+
               </IonRow>
             </IonGrid>
 
             {/* Engagement Zone (Daily Tactic Hero Banner with 24px Radii) */}
             <div style={{
               borderRadius: '24px',
-              backgroundColor: '#1E202B',
+              backgroundColor: 'var(--luxury-card-bg)',
               padding: '24px',
-              border: '1px solid rgba(201, 168, 76, 0.15)',
+              border: '1px solid var(--luxury-border)',
               marginBottom: '35px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+              boxShadow: 'var(--luxury-card-shadow)',
               position: 'relative',
               cursor: 'pointer'
             }}>
@@ -506,7 +703,7 @@ const PlayTab: React.FC = () => {
                 <span style={{ 
                   fontSize: '9px', 
                   fontWeight: '700', 
-                  color: '#C9A84C', 
+                  color: 'var(--luxury-gold)', 
                   letterSpacing: '1.5px', 
                   display: 'flex', 
                   alignItems: 'center', 
@@ -518,10 +715,10 @@ const PlayTab: React.FC = () => {
                 </span>
                 
                 {/* Mixed weight typography sentence */}
-                <h3 style={{ fontSize: '18px', fontWeight: '300', margin: '0 0 4px 0', color: '#ECEFF4', letterSpacing: '-0.3px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '300', margin: '0 0 4px 0', color: 'var(--ion-text-color)', letterSpacing: '-0.3px' }}>
                   Solve today's <span style={{ fontWeight: '800' }}>Daily Puzzle</span>
                 </h3>
-                <p style={{ fontSize: '11px', color: '#A0A6B5', margin: 0, fontWeight: '300' }}>Mate in 3 • 14,204 solved today</p>
+                <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: 0, fontWeight: '300' }}>Mate in 3 • 14,204 solved today</p>
               </div>
 
               {/* Northeast clickability arrow indicator */}
@@ -529,13 +726,13 @@ const PlayTab: React.FC = () => {
                 width: '32px',
                 height: '32px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(201, 168, 76, 0.08)',
+                backgroundColor: 'var(--luxury-gold-subtle)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '15px',
-                color: '#C9A84C',
-                border: '1px solid rgba(201, 168, 76, 0.2)'
+                color: 'var(--luxury-gold)',
+                border: '1px solid var(--luxury-border)'
               }}>
                 ↗
               </div>
@@ -546,7 +743,7 @@ const PlayTab: React.FC = () => {
               <h3 style={{ 
                 fontSize: '11px', 
                 fontWeight: '700', 
-                color: '#C9A84C', 
+                color: 'var(--luxury-gold)', 
                 letterSpacing: '1.5px', 
                 textTransform: 'uppercase', 
                 margin: '0 0 14px 4px' 
@@ -559,23 +756,24 @@ const PlayTab: React.FC = () => {
                   <div 
                     key={match.id}
                     style={{
-                      backgroundColor: '#1E202B',
+                      backgroundColor: 'var(--luxury-card-bg)',
                       borderRadius: '16px',
                       padding: '16px 20px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      border: '1px solid rgba(255, 255, 255, 0.03)'
+                      border: '1px solid var(--luxury-border)',
+                      boxShadow: 'var(--luxury-card-shadow)'
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#ECEFF4' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--ion-text-color)' }}>
                         vs <span style={{ fontWeight: '300' }}>{match.opponent}</span> ({match.opponentElo})
                       </div>
-                      <div style={{ fontSize: '10px', color: '#A0A6B5', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
                         <span style={{ 
                           fontWeight: '700', 
-                          color: match.outcome === 'win' ? '#81B64C' : match.outcome === 'loss' ? '#E53935' : '#ECEFF4' 
+                          color: match.outcome === 'win' ? '#81B64C' : match.outcome === 'loss' ? '#E53935' : 'var(--ion-text-color)' 
                         }}>
                           {match.outcome.toUpperCase()}
                         </span>
@@ -588,9 +786,9 @@ const PlayTab: React.FC = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {match.hasAudioLog && (
-                        <IonIcon icon={micOutline} style={{ color: '#C9A84C', fontSize: '15px' }} />
+                        <IonIcon icon={micOutline} style={{ color: 'var(--luxury-gold)', fontSize: '15px' }} />
                       )}
-                      <span style={{ color: '#888', fontSize: '14px' }}>↗</span>
+                      <span style={{ color: 'var(--luxury-gold)', fontSize: '14px' }}>↗</span>
                     </div>
                   </div>
                 ))}
@@ -604,7 +802,7 @@ const PlayTab: React.FC = () => {
         {/* VIEW 2: PREMIUM LUXURY MATCH SETUP CONFIGURATION VIEW     */}
         {/* ========================================================= */}
         {activeView === 'setup' && (
-          <div className="ion-padding" style={{ maxWidth: '480px', margin: '0 auto', color: '#ECEFF4' }}>
+          <div className="ion-padding" style={{ maxWidth: '480px', margin: '0 auto', color: 'var(--ion-text-color)' }}>
             
             {/* Elegant Segment Header */}
             <div style={{ marginBottom: '25px' }}>
@@ -612,12 +810,13 @@ const PlayTab: React.FC = () => {
                 value={gameMode} 
                 onIonChange={(e) => setGameMode(e.detail.value as GameMode)}
                 style={{ 
-                  '--background': '#13151C',
-                  '--color': '#A0A6B5',
-                  '--color-checked': '#0F111A',
-                  '--background-checked': '#C9A84C',
+                  '--background': 'var(--ion-background-color)',
+                  '--color': 'var(--luxury-text-muted)',
+                  '--color-checked': 'var(--ion-background-color)',
+                  '--background-checked': 'var(--luxury-gold)',
                   borderRadius: '12px',
-                  padding: '2px'
+                  padding: '2px',
+                  border: '1px solid var(--luxury-border)'
                 }}
               >
                 <IonSegmentButton value="computer" style={{ margin: '2px' }}>
@@ -626,19 +825,110 @@ const PlayTab: React.FC = () => {
                 <IonSegmentButton value="friend" style={{ margin: '2px' }}>
                   <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Friend Lobby</IonLabel>
                 </IonSegmentButton>
+                <IonSegmentButton value="bluetooth" style={{ margin: '2px' }}>
+                  <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Bluetooth P2P</IonLabel>
+                </IonSegmentButton>
               </IonSegment>
             </div>
+
+            {/* Sub-view: Bluetooth Offline scans */}
+            {gameMode === 'bluetooth' && (
+              <div style={{ 
+                backgroundColor: 'var(--luxury-card-bg)', 
+                borderRadius: '24px', 
+                padding: '22px', 
+                marginBottom: '20px', 
+                border: '1px solid var(--luxury-border)',
+                boxShadow: 'var(--luxury-card-shadow)'
+              }}>
+                <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <IonIcon icon={bluetoothOutline} />
+                  Bluetooth Local Pairing
+                </h3>
+                
+                {isBtScanning ? (
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <IonSpinner name="crescent" style={{ '--color': 'var(--luxury-gold)' }} />
+                    <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: 'var(--luxury-text-muted)' }}>Scanning peer signals...</p>
+                  </div>
+                ) : (
+                  <div>
+                    {connectedBtDevice ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#81B64C', fontSize: '13px', margin: '5px 0 12px 0', fontWeight: '600' }}>
+                        <IonIcon icon={checkmarkCircleOutline} />
+                        Connected to: {connectedBtDevice}
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: '0 0 14px 0', fontWeight: '300' }}>Scan to connect and play local match offline with a nearby device.</p>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+                      {btDevices.map((dev) => (
+                        <div key={dev.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: 'var(--ion-background-color)',
+                          padding: '10px 14px',
+                          borderRadius: '12px',
+                          border: '1px solid var(--luxury-border)'
+                        }}>
+                          <span style={{ fontSize: '12px', fontWeight: '500' }}>{dev.name}</span>
+                          {dev.status === 'discovered' && (
+                            <button 
+                              onClick={() => connectToBtDevice(dev)}
+                              style={{
+                                background: 'var(--luxury-gold-subtle)',
+                                border: '1px solid var(--luxury-gold)',
+                                color: 'var(--luxury-gold)',
+                                borderRadius: '8px',
+                                fontSize: '10px',
+                                fontWeight: '700',
+                                padding: '4px 10px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Pair
+                            </button>
+                          )}
+                          {dev.status === 'connecting' && <IonSpinner name="dots" style={{ '--color': 'var(--luxury-gold)' }} />}
+                          {dev.status === 'paired' && <IonIcon icon={checkmarkCircleOutline} style={{ color: '#81B64C' }} />}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button 
+                      onClick={startBluetoothScan}
+                      style={{
+                        width: '100%',
+                        backgroundColor: 'var(--luxury-gold-subtle)',
+                        border: '1px solid var(--luxury-gold)',
+                        borderRadius: '12px',
+                        color: 'var(--luxury-gold)',
+                        padding: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Scan Local Antennas
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Friend Room Code Generator */}
             {gameMode === 'friend' && (
               <div style={{ 
-                backgroundColor: '#1E202B', 
+                backgroundColor: 'var(--luxury-card-bg)', 
                 borderRadius: '24px', 
-                padding: '20px', 
+                padding: '22px', 
                 marginBottom: '20px', 
-                border: '1px solid rgba(255,255,255,0.04)' 
+                border: '1px solid var(--luxury-border)',
+                boxShadow: 'var(--luxury-card-shadow)'
               }}>
-                <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#C9A84C', margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <IonIcon icon={linkOutline} />
                   Matchmaking Lobby Link
                 </h3>
@@ -653,10 +943,10 @@ const PlayTab: React.FC = () => {
                     }}
                     style={{
                       width: '100%',
-                      backgroundColor: 'rgba(201, 168, 76, 0.06)',
-                      border: '1px solid rgba(201, 168, 76, 0.2)',
+                      backgroundColor: 'var(--luxury-gold-subtle)',
+                      border: '1px solid var(--luxury-gold)',
                       borderRadius: '12px',
-                      color: '#C9A84C',
+                      color: 'var(--luxury-gold)',
                       padding: '12px',
                       fontWeight: '600',
                       cursor: 'pointer',
@@ -666,7 +956,7 @@ const PlayTab: React.FC = () => {
                     {isLobbyConnecting ? 'Generating Tunnel...' : 'Generate Challenge Code'}
                   </button>
                 ) : (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0F111A', padding: '10px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--ion-background-color)', padding: '10px 14px', borderRadius: '12px', border: '1px solid var(--luxury-border)' }}>
                     <span style={{ fontSize: '13px', color: '#81B64C', fontWeight: '700' }}>Lobby Code: {roomCode}</span>
                     <button 
                       onClick={() => {
@@ -676,7 +966,7 @@ const PlayTab: React.FC = () => {
                       style={{
                         background: 'transparent',
                         border: 'none',
-                        color: '#C9A84C',
+                        color: 'var(--luxury-gold)',
                         fontWeight: '700',
                         fontSize: '12px',
                         cursor: 'pointer'
@@ -691,7 +981,7 @@ const PlayTab: React.FC = () => {
 
             {/* COLOR SELECTION CARD */}
             <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '11px', fontWeight: '700', color: '#C9A84C', margin: '0 0 12px 4px', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <h3 style={{ fontSize: '11px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 12px 4px', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <IonIcon icon={colorPaletteOutline} />
                 Your Color
               </h3>
@@ -703,15 +993,16 @@ const PlayTab: React.FC = () => {
                     style={{
                       padding: '20px 8px',
                       borderRadius: '16px',
-                      backgroundColor: '#1E202B',
-                      border: selectedColor === 'white' ? '1px solid #C9A84C' : '1px solid transparent',
+                      backgroundColor: 'var(--luxury-card-bg)',
+                      border: selectedColor === 'white' ? '1px solid var(--luxury-gold)' : '1px solid transparent',
                       textAlign: 'center',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      transition: 'border-color 0.3s ease, background-color 0.3s ease'
                     }}
                   >
                     <span style={{ fontSize: '22px', display: 'block', marginBottom: '6px' }}>♔</span>
-                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'white' ? '800' : '400', color: selectedColor === 'white' ? '#C9A84C' : '#A0A6B5' }}>White</span>
+                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'white' ? '800' : '400', color: selectedColor === 'white' ? 'var(--luxury-gold)' : 'var(--luxury-text-muted)' }}>White</span>
                   </div>
                 </IonCol>
 
@@ -721,15 +1012,16 @@ const PlayTab: React.FC = () => {
                     style={{
                       padding: '20px 8px',
                       borderRadius: '16px',
-                      backgroundColor: '#1E202B',
-                      border: selectedColor === 'black' ? '1px solid #C9A84C' : '1px solid transparent',
+                      backgroundColor: 'var(--luxury-card-bg)',
+                      border: selectedColor === 'black' ? '1px solid var(--luxury-gold)' : '1px solid transparent',
                       textAlign: 'center',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      transition: 'border-color 0.3s ease, background-color 0.3s ease'
                     }}
                   >
                     <span style={{ fontSize: '22px', display: 'block', marginBottom: '6px' }}>♚</span>
-                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'black' ? '800' : '400', color: selectedColor === 'black' ? '#C9A84C' : '#A0A6B5' }}>Black</span>
+                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'black' ? '800' : '400', color: selectedColor === 'black' ? 'var(--luxury-gold)' : 'var(--luxury-text-muted)' }}>Black</span>
                   </div>
                 </IonCol>
 
@@ -739,15 +1031,16 @@ const PlayTab: React.FC = () => {
                     style={{
                       padding: '20px 8px',
                       borderRadius: '16px',
-                      backgroundColor: '#1E202B',
-                      border: selectedColor === 'random' ? '1px solid #C9A84C' : '1px solid transparent',
+                      backgroundColor: 'var(--luxury-card-bg)',
+                      border: selectedColor === 'random' ? '1px solid var(--luxury-gold)' : '1px solid transparent',
                       textAlign: 'center',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      transition: 'border-color 0.3s ease, background-color 0.3s ease'
                     }}
                   >
                     <span style={{ fontSize: '22px', display: 'block', marginBottom: '6px' }}>🎲</span>
-                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'random' ? '800' : '400', color: selectedColor === 'random' ? '#C9A84C' : '#A0A6B5' }}>Random</span>
+                    <span style={{ fontSize: '12px', fontWeight: selectedColor === 'random' ? '800' : '400', color: selectedColor === 'random' ? 'var(--luxury-gold)' : 'var(--luxury-text-muted)' }}>Random</span>
                   </div>
                 </IonCol>
               </IonRow>
@@ -756,20 +1049,21 @@ const PlayTab: React.FC = () => {
             {/* TIME CONTROL CARD (Soft oversized 24px) */}
             <div style={{ 
               marginBottom: '25px', 
-              backgroundColor: '#1E202B', 
+              backgroundColor: 'var(--luxury-card-bg)', 
               borderRadius: '24px', 
               padding: '22px', 
-              border: '1px solid rgba(255, 255, 255, 0.03)',
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)'
+              border: '1px solid var(--luxury-border)',
+              boxShadow: 'var(--luxury-card-shadow)',
+              transition: 'background-color 0.3s ease'
             }}>
-              <h3 style={{ fontSize: '11px', fontWeight: '700', color: '#C9A84C', margin: '0 0 18px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <h3 style={{ fontSize: '11px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 18px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <IonIcon icon={timerOutline} />
                 Time Control
               </h3>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '12px', fontWeight: '300' }}>Same time for both</span>
-                <IonToggle checked={sameTimeBoth} onIonChange={(e) => setSameTimeBoth(e.detail.checked)} style={{ '--background': '#0F111A' }} />
+                <IonToggle checked={sameTimeBoth} onIonChange={(e) => setSameTimeBoth(e.detail.checked)} style={{ '--background': 'var(--ion-background-color)' }} />
               </div>
 
               {/* Dynamic horizontal duration selectors */}
@@ -783,11 +1077,12 @@ const PlayTab: React.FC = () => {
                       borderRadius: '8px',
                       fontSize: '11px',
                       fontWeight: '600',
-                      border: timeControl === t ? '1px solid #C9A84C' : '1px solid rgba(255,255,255,0.06)',
-                      backgroundColor: timeControl === t ? 'rgba(201, 168, 76, 0.08)' : 'transparent',
-                      color: timeControl === t ? '#C9A84C' : '#A0A6B5',
+                      border: timeControl === t ? '1px solid var(--luxury-gold)' : '1px solid var(--luxury-border)',
+                      backgroundColor: timeControl === t ? 'var(--luxury-gold-subtle)' : 'transparent',
+                      color: timeControl === t ? 'var(--luxury-gold)' : 'var(--luxury-text-muted)',
                       cursor: 'pointer',
-                      minWidth: '65px'
+                      minWidth: '65px',
+                      transition: 'border-color 0.2s, background-color 0.2s'
                     }}
                   >
                     {t} min
@@ -797,7 +1092,7 @@ const PlayTab: React.FC = () => {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '12px', fontWeight: '300' }}>Same increment for both</span>
-                <IonToggle checked={sameIncrementBoth} onIonChange={(e) => setSameIncrementBoth(e.detail.checked)} style={{ '--background': '#0F111A' }} />
+                <IonToggle checked={sameIncrementBoth} onIonChange={(e) => setSameIncrementBoth(e.detail.checked)} style={{ '--background': 'var(--ion-background-color)' }} />
               </div>
 
               {/* Increments buttons */}
@@ -811,11 +1106,12 @@ const PlayTab: React.FC = () => {
                       borderRadius: '8px',
                       fontSize: '11px',
                       fontWeight: '600',
-                      border: increment === inc ? '1px solid #C9A84C' : '1px solid rgba(255,255,255,0.06)',
-                      backgroundColor: increment === inc ? 'rgba(201, 168, 76, 0.08)' : 'transparent',
-                      color: increment === inc ? '#C9A84C' : '#A0A6B5',
+                      border: increment === inc ? '1px solid var(--luxury-gold)' : '1px solid var(--luxury-border)',
+                      backgroundColor: increment === inc ? 'var(--luxury-gold-subtle)' : 'transparent',
+                      color: increment === inc ? 'var(--luxury-gold)' : 'var(--luxury-text-muted)',
                       cursor: 'pointer',
-                      minWidth: '70px'
+                      minWidth: '70px',
+                      transition: 'border-color 0.2s, background-color 0.2s'
                     }}
                   >
                     {inc === 0 ? 'No inc' : `+${inc}s`}
@@ -827,30 +1123,30 @@ const PlayTab: React.FC = () => {
             {/* ACCORDION HANDICAP */}
             <div style={{ marginBottom: '30px' }}>
               <IonAccordionGroup>
-                <IonAccordion value="handicaps" style={{ '--background': '#1E202B', color: '#ECEFF4', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <IonItem slot="header" style={{ '--background': '#1E202B', '--color': '#ECEFF4' }}>
-                    <IonIcon icon={scaleOutline} slot="start" style={{ color: '#C9A84C' }} />
+                <IonAccordion value="handicaps" style={{ '--background': 'var(--luxury-card-bg)', color: 'var(--ion-text-color)', borderRadius: '24px', overflow: 'hidden', border: '1px solid var(--luxury-border)' }}>
+                  <IonItem slot="header" style={{ '--background': 'var(--luxury-card-bg)', '--color': 'var(--ion-text-color)' }}>
+                    <IonIcon icon={scaleOutline} slot="start" style={{ color: 'var(--luxury-gold)' }} />
                     <IonLabel>
                       <h3 style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Handicap Advantage</h3>
-                      <p style={{ fontSize: '10px', color: '#A0A6B5', fontWeight: '300' }}>Optional setup parameters</p>
+                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', fontWeight: '300' }}>Optional setup parameters</p>
                     </IonLabel>
                   </IonItem>
-                  <div className="ion-padding" slot="content" style={{ backgroundColor: '#1E202B', display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px 20px' }}>
+                  <div className="ion-padding" slot="content" style={{ backgroundColor: 'var(--luxury-card-bg)', display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px 20px' }}>
                     <div 
                       onClick={() => setHandicap('none')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'none' ? '#0F111A' : 'transparent', border: handicap === 'none' ? '1px solid #C9A84C' : '1px solid transparent', cursor: 'pointer', fontSize: '12px' }}
+                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'none' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'none' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
                     >
                       🛡️ None (Standard Equal Match)
                     </div>
                     <div 
                       onClick={() => setHandicap('knight')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'knight' ? '#0F111A' : 'transparent', border: handicap === 'knight' ? '1px solid #C9A84C' : '1px solid transparent', cursor: 'pointer', fontSize: '12px' }}
+                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'knight' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'knight' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
                     >
                       🐎 Knight Advantage (White plays without Knight b1)
                     </div>
                     <div 
                       onClick={() => setHandicap('queen')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'queen' ? '#0F111A' : 'transparent', border: handicap === 'queen' ? '1px solid #C9A84C' : '1px solid transparent', cursor: 'pointer', fontSize: '12px' }}
+                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'queen' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'queen' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
                     >
                       👑 Queen Advantage (White plays without Queen d1)
                     </div>
@@ -862,22 +1158,23 @@ const PlayTab: React.FC = () => {
             {/* Launch Active Game Button */}
             <button 
               onClick={handleHostGame}
-              disabled={gameMode === 'friend' && !roomCode}
+              disabled={(gameMode === 'friend' && !roomCode) || (gameMode === 'bluetooth' && !connectedBtDevice)}
               style={{ 
                 width: '100%',
-                backgroundColor: '#C9A84C', // Premium champagne gold base
-                color: '#0F111A',
+                backgroundColor: 'var(--luxury-gold)', 
+                color: 'var(--ion-background-color)',
                 fontWeight: '700',
                 height: '50px',
                 fontSize: '14px',
-                borderRadius: '24px', // Fluid Oversized Button
+                borderRadius: '24px', 
                 cursor: 'pointer',
                 border: 'none',
                 boxShadow: '0 8px 20px rgba(201, 168, 76, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px'
+                gap: '8px',
+                transition: 'opacity 0.2s'
               }}
             >
               {gameMode === 'computer' ? (
@@ -885,10 +1182,15 @@ const PlayTab: React.FC = () => {
                   <IonIcon icon={playOutline} />
                   Start Match vs Computer
                 </>
-              ) : (
+              ) : gameMode === 'friend' ? (
                 <>
                   <IonIcon icon={wifiOutline} />
                   Host Online Lobby
+                </>
+              ) : (
+                <>
+                  <IonIcon icon={wifiOutline} />
+                  Host Local Bluetooth Match
                 </>
               )}
             </button>
@@ -905,28 +1207,29 @@ const PlayTab: React.FC = () => {
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-around', 
-              backgroundColor: '#1E202B', 
+              backgroundColor: 'var(--luxury-card-bg)', 
               padding: '16px',
-              borderBottom: '1px solid rgba(255,255,255,0.03)',
-              color: '#ECEFF4'
+              borderBottom: '1px solid var(--luxury-border)',
+              color: 'var(--ion-text-color)',
+              transition: 'background-color 0.3s ease'
             }}>
               <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '10px', color: '#A0A6B5', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>WHITE (Player)</span>
-                <span style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 'bold', color: chessRef.current.turn() === 'w' ? '#C9A84C' : '#ECEFF4' }}>
+                <span style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>WHITE (Player)</span>
+                <span style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 'bold', color: chessRef.current.turn() === 'w' ? 'var(--luxury-gold)' : 'var(--ion-text-color)' }}>
                   {formatTime(whiteTime)}
                 </span>
               </div>
-              <div style={{ alignSelf: 'center', color: '#A0A6B5', fontWeight: 'bold' }}>vs</div>
+              <div style={{ alignSelf: 'center', color: 'var(--luxury-text-muted)', fontWeight: 'bold' }}>vs</div>
               <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '10px', color: '#A0A6B5', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>BLACK (Opponent)</span>
-                <span style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 'bold', color: chessRef.current.turn() === 'b' ? '#C9A84C' : '#ECEFF4' }}>
+                <span style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>BLACK (Opponent)</span>
+                <span style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 'bold', color: chessRef.current.turn() === 'b' ? 'var(--luxury-gold)' : 'var(--ion-text-color)' }}>
                   {formatTime(blackTime)}
                 </span>
               </div>
             </div>
 
             {/* 100% full-width chessboard layout (mandated for zero visual strain) */}
-            <div style={{ width: '100vw', maxWidth: '100vw', margin: '0', padding: '0', backgroundColor: '#0F111A' }}>
+            <div style={{ width: '100vw', maxWidth: '100vw', margin: '0', padding: '0', backgroundColor: 'var(--ion-background-color)', transition: 'background-color 0.3s ease' }}>
               <Chessboard 
                 position={gameFen} 
                 onPieceDrop={onDrop}
@@ -935,23 +1238,25 @@ const PlayTab: React.FC = () => {
                 customLightSquareStyle={{ backgroundColor: '#ECEFF4' }}
                 customBoardStyle={{
                   borderRadius: '0px',
-                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)'
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.15)'
                 }}
                 arePiecesDraggable={!isEngineThinking && isClockRunning}
               />
             </div>
 
             {/* Game controllers */}
-            <div className="ion-padding" style={{ color: '#ECEFF4', maxWidth: '600px', margin: '0 auto' }}>
+            <div className="ion-padding" style={{ color: 'var(--ion-text-color)', maxWidth: '600px', margin: '0 auto' }}>
               <div style={{ 
                 padding: '14px 20px', 
                 borderRadius: '16px', 
-                backgroundColor: '#1E202B', 
+                backgroundColor: 'var(--luxury-card-bg)', 
                 marginBottom: '20px', 
                 fontSize: '14px', 
                 fontWeight: '600',
                 textAlign: 'center',
-                borderLeft: '4px solid #C9A84C'
+                borderLeft: '4px solid var(--luxury-gold)',
+                boxShadow: 'var(--luxury-card-shadow)',
+                transition: 'background-color 0.3s ease'
               }}>
                 {gameStatus}
               </div>
@@ -975,19 +1280,21 @@ const PlayTab: React.FC = () => {
 
               {/* Move Log */}
               <div style={{ 
-                backgroundColor: '#1E202B', 
+                backgroundColor: 'var(--luxury-card-bg)', 
                 borderRadius: '24px', 
                 padding: '20px', 
                 marginTop: '20px',
-                border: '1px solid rgba(255,255,255,0.03)'
+                border: '1px solid var(--luxury-border)',
+                boxShadow: 'var(--luxury-card-shadow)',
+                transition: 'background-color 0.3s ease'
               }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: '#C9A84C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Moves Played</h3>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Moves Played</h3>
                 {history.length === 0 ? (
-                  <p style={{ color: '#888', margin: 0, fontSize: '13px', fontWeight: '300' }}>Waiting for first move...</p>
+                  <p style={{ color: 'var(--luxury-text-muted)', margin: 0, fontSize: '13px', fontWeight: '300' }}>Waiting for first move...</p>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '70px', overflowY: 'auto' }}>
                     {history.map((move, index) => (
-                      <span key={index} style={{ padding: '4px 8px', backgroundColor: '#0F111A', borderRadius: '6px' }}>
+                      <span key={index} style={{ padding: '4px 8px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px', color: 'var(--ion-text-color)', transition: 'background-color 0.3s ease, color 0.3s ease' }}>
                         {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
                       </span>
                     ))}

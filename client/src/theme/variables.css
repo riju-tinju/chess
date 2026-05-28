@@ -3,16 +3,38 @@
 :root {
   --ion-font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   
-  /* EDITORIAL LUXURY DARK PALETTE */
+  /* ========================================================= */
+  /* DEFAULT: PREMIUM LIGHT MODE (The Grandmaster's Library)   */
+  /* ========================================================= */
+  --ion-background-color: #FBF9F4;      /* Warm Alabaster Canvas */
+  --ion-text-color: #1A1E26;            /* Deep Charcoal Text */
+  
+  --luxury-card-bg: #FFFFFF;            /* Pure White Card Surface */
+  --luxury-card-shadow: 0 12px 32px rgba(26, 30, 38, 0.04); /* Soft shadow */
+  --luxury-border: rgba(26, 30, 38, 0.05); /* Ultra-low opacity boundary */
+  
+  --luxury-text-muted: #626C7A;         /* Soft slate for details */
+  --luxury-inner-dark: #1A1E26;
+  
+  --luxury-gold: #C9A84C;               /* Champagne Gold Accent */
+  --luxury-gold-subtle: rgba(201, 168, 76, 0.08);
+  
+  --ion-color-primary: #C9A84C;
+}
+
+/* ========================================================= */
+/* PREMIUM DARK MODE (Midnight Charcoal / The Private Room) */
+/* ========================================================= */
+.dark-theme {
   --ion-background-color: #0F111A;      /* Pure Deep Slate Canvas */
   --ion-text-color: #ECEFF4;            /* Soft Muted White Text */
   
   --luxury-card-bg: #1E202B;            /* Muted Dark Indigo Card Surface */
-  --luxury-gold: #C9A84C;               /* Champagne Gold Accent */
-  --luxury-gold-subtle: rgba(201, 168, 76, 0.08);
+  --luxury-card-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  --luxury-border: rgba(255, 255, 255, 0.04);
   
-  /* Smooth scrollbars and custom selection */
-  --ion-color-primary: #C9A84C;
+  --luxury-text-muted: #A0A6B5;
+  --luxury-inner-dark: #ECEFF4;
 }
 
 body {
@@ -20,6 +42,7 @@ body {
   background-color: var(--ion-background-color);
   color: var(--ion-text-color);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Custom Scrollbar for Luxury Aesthetics */
@@ -28,11 +51,14 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0F111A;
+  background: var(--ion-background-color);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(26, 30, 38, 0.1);
   border-radius: 3px;
+}
+.dark-theme ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--luxury-gold);
