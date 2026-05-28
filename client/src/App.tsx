@@ -11,6 +11,8 @@ import {
   IonSpinner,
   IonPage,
   IonContent,
+  IonModal,
+  IonButton,
   setupIonicReact
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
@@ -22,6 +24,7 @@ import {
   listOutline, 
   personOutline 
 } from 'ionicons/icons';
+import { useUserStore } from './store/useUserStore';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -64,6 +67,29 @@ const LoadingScreen: React.FC = () => (
 
 const App: React.FC = () => {
   const { t } = useTranslation();
+  
+  // Zustand Store Selectors
+  const upsellModal = useUserStore((state) => state.upsellModal);
+  const closePremiumUpsellModal = useUserStore((state) => state.closePremiumUpsellModal);
+  const currentUser = useUserStore((state) => state.currentUser);
+  const setCurrentUser = useUserStore((state) => state.setCurrentUser);
+
+  const simulateUpgrade = () => {
+    if (currentUser) {
+      setCurrentUser({
+        ...currentUser,
+        isPremium: true
+      });
+    } else {
+      setCurrentUser({
+        id: 'sandbox_user',
+        username: 'SandboxGrandmaster',
+        email: 'sandbox@chess.com',
+        isPremium: true
+      });
+    }
+    closePremiumUpsellModal();
+  };
 
   return (
     <IonApp>
@@ -110,6 +136,44 @@ const App: React.FC = () => {
           </IonTabs>
         </Suspense>
       </IonReactRouter>
+
+      {/* Global Gold-Accented Premium Members Upsell Modal */}
+      <IonModal 
+        isOpen={upsellModal.isOpen} 
+        onDidDismiss={closePremiumUpsellModal}
+        breakpoints={[0, 0.4, 0.7]}
+        initialBreakpoint={0.4}
+      >
+        <IonContent className="ion-padding" style={{ '--background': '#1E1E1E', color: '#FFFFFF' }}>
+          <div style={{ textAlign: 'center', padding: '10px' }}>
+            <span style={{ 
+              fontSize: '11px', 
+              fontWeight: 'bold', 
+              color: '#121212', 
+              backgroundColor: '#C9A84C', 
+              padding: '3px 10px', 
+              borderRadius: '20px',
+              letterSpacing: '1px'
+            }}>
+              MEMBERSHIP REQUIRED
+            </span>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '15px 0 10px 0', color: '#C9A84C' }}>
+              {upsellModal.title}
+            </h2>
+            <p style={{ fontSize: '13px', color: '#A0A6B5', margin: '0 0 20px 0', lineHeight: '1.5' }}>
+              {upsellModal.description}
+            </p>
+
+            <IonButton expand="block" color="warning" onClick={simulateUpgrade} style={{ 'font-weight': '600' }}>
+              Upgrade Now (Sandbox Simulator)
+            </IonButton>
+            
+            <IonButton expand="block" fill="clear" color="medium" onClick={closePremiumUpsellModal}>
+              Maybe Later
+            </IonButton>
+          </div>
+        </IonContent>
+      </IonModal>
     </IonApp>
   );
 };

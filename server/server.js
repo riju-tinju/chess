@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
+import gameRoutes from './routes/gameRoutes.js';
 
 dotenv.config();
 
@@ -28,6 +29,9 @@ app.use(morgan('dev'));
 
 // Auth Endpoints
 app.use('/api/auth', authRoutes);
+
+// Games Endpoints
+app.use('/api/games', gameRoutes);
 
 // Health Check API endpoint
 app.get('/api/health', (req, res) => {
