@@ -13,8 +13,6 @@ import {
   IonCol,
   IonIcon,
   IonToggle,
-  IonAccordion,
-  IonAccordionGroup,
   IonToast,
   IonSpinner,
   IonAvatar,
@@ -102,7 +100,9 @@ const PlayTab: React.FC = () => {
   const [timeControl, setTimeControl] = useState<number>(5);
   const [sameIncrementBoth, setSameIncrementBoth] = useState<boolean>(true);
   const [increment, setIncrement] = useState<number>(0);
-  const [handicap, setHandicap] = useState<string>('none');
+
+  // Engine Strength Level Selection (Level 1 to 10)
+  const [engineStrength, setEngineStrength] = useState<number>(4);
 
   // Interactive Digital Clocks
   const [whiteTime, setWhiteTime] = useState<number>(300);
@@ -175,7 +175,7 @@ const PlayTab: React.FC = () => {
     return () => clearInterval(interval);
   }, [activeView, isClockRunning, gameFen]);
 
-  // Computer engine calculation
+  // Computer engine calculation using variable Engine Strength
   useEffect(() => {
     const chess = chessRef.current;
     if (activeView === 'board' && gameMode === 'computer' && chess.turn() === 'b' && !chess.isGameOver() && !isEngineThinking) {
@@ -183,7 +183,7 @@ const PlayTab: React.FC = () => {
       setGameStatus('Computer is thinking...');
       
       const timer = setTimeout(() => {
-        engineRef.current?.getBestMove(chess.fen(), 10, (bestMove) => {
+        engineRef.current?.getBestMove(chess.fen(), engineStrength, (bestMove) => {
           const from = bestMove.slice(0, 2);
           const to = bestMove.slice(2, 4);
           const promotion = bestMove.length > 4 ? bestMove[4] : undefined;
@@ -205,7 +205,7 @@ const PlayTab: React.FC = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [gameFen, gameMode, activeView]);
+  }, [gameFen, gameMode, activeView, engineStrength]);
 
   const formatTime = (timeInSecs: number) => {
     const mins = Math.floor(timeInSecs / 60);
@@ -267,12 +267,6 @@ const PlayTab: React.FC = () => {
     setBlackTime(initialClocks);
     
     const cleanGame = new Chess();
-    if (handicap === 'knight') {
-      cleanGame.load('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR b KQkq - 1 1');
-    } else if (handicap === 'queen') {
-      cleanGame.load('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR b KQkq - 1 1');
-    }
-
     chessRef.current = cleanGame;
     setGameFen(cleanGame.fen());
     setHistory([]);
@@ -934,13 +928,65 @@ const PlayTab: React.FC = () => {
                   <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>vs Computer</IonLabel>
                 </IonSegmentButton>
                 <IonSegmentButton value="friend" style={{ margin: '2px' }}>
-                  <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Friend Lobby</IonLabel>
+                  <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>PLAY ONLINE</IonLabel>
                 </IonSegmentButton>
                 <IonSegmentButton value="wifi" style={{ margin: '2px' }}>
                   <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Local Wi-Fi</IonLabel>
                 </IonSegmentButton>
               </IonSegment>
             </div>
+
+            {/* ENGINE STRENGTH SELECTOR (Strictly for "vs Computer" Mode) */}
+            {gameMode === 'computer' && (
+              <div style={{
+                marginBottom: '24px',
+                backgroundColor: 'var(--luxury-card-bg)',
+                borderRadius: '24px',
+                padding: '22px',
+                border: '1px solid var(--luxury-border)',
+                boxShadow: 'var(--luxury-card-shadow)',
+                transition: 'background-color 0.3s ease'
+              }}>
+                <h3 style={{ fontSize: '11px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <IonIcon icon={optionsOutline} />
+                  Engine Strength
+                </h3>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '18px' }}>
+                  <div>
+                    <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--ion-text-color)', display: 'block' }}>
+                      Strength Level: {engineStrength}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', fontWeight: '400' }}>
+                      Approx. Elo: {engineStrength * 200 + 400}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '9px', fontWeight: '800', color: 'var(--luxury-gold)', letterSpacing: '0.8px' }}>
+                    {engineStrength <= 3 ? 'BEGINNER' : engineStrength <= 7 ? 'INTERMEDIATE' : 'GRANDMASTER'}
+                  </span>
+                </div>
+
+                {/* Elegant Custom Range Slider */}
+                <div style={{ display: 'flex', alignItems: 'center', padding: '4px 0' }}>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="10" 
+                    value={engineStrength} 
+                    onChange={(e) => setEngineStrength(parseInt(e.target.value))}
+                    style={{
+                      width: '100%',
+                      accentColor: 'var(--luxury-gold)',
+                      height: '6px',
+                      borderRadius: '3px',
+                      background: 'var(--ion-background-color)',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Sub-view: Local Wi-Fi socket peer scans */}
             {gameMode === 'wifi' && (
@@ -1165,7 +1211,7 @@ const PlayTab: React.FC = () => {
 
             {/* TIME CONTROL CARD (Soft oversized 24px) */}
             <div style={{ 
-              marginBottom: '25px', 
+              marginBottom: '30px', 
               backgroundColor: 'var(--luxury-card-bg)', 
               borderRadius: '24px', 
               padding: '22px', 
@@ -1183,9 +1229,9 @@ const PlayTab: React.FC = () => {
                 <IonToggle checked={sameTimeBoth} onIonChange={(e) => setSameTimeBoth(e.detail.checked)} style={{ '--background': 'var(--ion-background-color)' }} />
               </div>
 
-              {/* Dynamic horizontal duration selectors */}
+              {/* Dynamic horizontal duration selectors - Thoughtful classical arrays */}
               <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '18px' }}>
-                {[1, 2, 3, 5, 10].map((t) => (
+                {[3, 5, 10, 15, 20].map((t) => (
                   <button 
                     key={t}
                     onClick={() => setTimeControl(t)}
@@ -1237,41 +1283,6 @@ const PlayTab: React.FC = () => {
               </div>
             </div>
 
-            {/* ACCORDION HANDICAP */}
-            <div style={{ marginBottom: '30px' }}>
-              <IonAccordionGroup>
-                <IonAccordion value="handicaps" style={{ '--background': 'var(--luxury-card-bg)', color: 'var(--ion-text-color)', borderRadius: '24px', overflow: 'hidden', border: '1px solid var(--luxury-border)' }}>
-                  <IonItem slot="header" style={{ '--background': 'var(--luxury-card-bg)', '--color': 'var(--ion-text-color)' }}>
-                    <IonIcon icon={scaleOutline} slot="start" style={{ color: 'var(--luxury-gold)' }} />
-                    <IonLabel>
-                      <h3 style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Handicap Advantage</h3>
-                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', fontWeight: '300' }}>Optional setup parameters</p>
-                    </IonLabel>
-                  </IonItem>
-                  <div className="ion-padding" slot="content" style={{ backgroundColor: 'var(--luxury-card-bg)', display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px 20px' }}>
-                    <div 
-                      onClick={() => setHandicap('none')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'none' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'none' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
-                    >
-                      🛡️ None (Standard Equal Match)
-                    </div>
-                    <div 
-                      onClick={() => setHandicap('knight')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'knight' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'knight' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
-                    >
-                      🐎 Knight Advantage (White plays without Knight b1)
-                    </div>
-                    <div 
-                      onClick={() => setHandicap('queen')}
-                      style={{ padding: '12px', borderRadius: '12px', backgroundColor: handicap === 'queen' ? 'var(--ion-background-color)' : 'transparent', border: handicap === 'queen' ? '1px solid var(--luxury-gold)' : '1px solid transparent', cursor: 'pointer', fontSize: '12px', color: 'var(--ion-text-color)' }}
-                    >
-                      👑 Queen Advantage (White plays without Queen d1)
-                    </div>
-                  </div>
-                </IonAccordion>
-              </IonAccordionGroup>
-            </div>
-
             {/* Launch Active Game Button */}
             <button 
               onClick={handleHostGame}
@@ -1301,8 +1312,8 @@ const PlayTab: React.FC = () => {
                 </>
               ) : gameMode === 'friend' ? (
                 <>
-                  <IonIcon icon={wifiOutline} />
-                  Host Online Lobby
+                  <IonIcon icon={playOutline} />
+                  Play Online
                 </>
               ) : (
                 <>
