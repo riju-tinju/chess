@@ -31,7 +31,7 @@ import {
   refreshOutline, 
   playBackOutline, 
   hardwareChipOutline, 
-  bluetoothOutline, 
+  wifiOutline, 
   linkOutline,
   shareOutline,
   copyOutline,
@@ -39,7 +39,6 @@ import {
   colorPaletteOutline,
   timerOutline,
   scaleOutline,
-  wifiOutline,
   playOutline,
   optionsOutline,
   globeOutline,
@@ -55,7 +54,7 @@ import { StockfishEngine } from '../services/stockfishService';
 import { useUserStore } from '../store/useUserStore';
 
 type ActiveView = 'dashboard' | 'setup' | 'board';
-type GameMode = 'computer' | 'friend' | 'bluetooth';
+type GameMode = 'computer' | 'friend' | 'wifi';
 type ChessColor = 'white' | 'black' | 'random';
 
 interface RecentMatch {
@@ -68,10 +67,12 @@ interface RecentMatch {
   date: string;
 }
 
-interface BluetoothDevice {
+// Local P2P Wi-Fi Peer interface (Replacing Bluetooth entirely)
+interface WifiPeer {
   id: string;
   name: string;
-  status: 'paired' | 'discovered' | 'connecting';
+  ipAddress: string;
+  status: 'available' | 'connecting' | 'connected';
 }
 
 const PlayTab: React.FC = () => {
@@ -115,16 +116,17 @@ const PlayTab: React.FC = () => {
     { id: 'rec_3', opponent: 'MagnusC', opponentElo: 2882, outcome: 'draw', type: 'CHESS.COM', hasAudioLog: true, date: '3 DAYS AGO' }
   ]);
 
-  // Bluetooth & Friend states
-  const [isBtScanning, setIsBtScanning] = useState<boolean>(false);
-  const [connectedBtDevice, setConnectedBtDevice] = useState<string | null>(null);
+  // Local Wi-Fi Peers States
+  const [isWifiScanning, setIsWifiScanning] = useState<boolean>(false);
+  const [connectedWifiPeer, setConnectedWifiPeer] = useState<string | null>(null);
+  const [wifiPeers, setWifiPeers] = useState<WifiPeer[]>([
+    { id: 'peer_1', name: 'Grandmaster iPad Pro', ipAddress: '192.168.1.45', status: 'available' },
+    { id: 'peer_2', name: 'OnePlus 12 Tablet', ipAddress: '192.168.1.109', status: 'available' },
+    { id: 'peer_3', name: 'MacBook Pro Chess Engine', ipAddress: '192.168.1.201', status: 'available' }
+  ]);
+
   const [roomCode, setRoomCode] = useState<string>('');
   const [isLobbyConnecting, setIsLobbyConnecting] = useState<boolean>(false);
-  const [btDevices, setBtDevices] = useState<BluetoothDevice[]>([
-    { id: 'dev_1', name: 'Grandmaster iPad Pro', status: 'paired' },
-    { id: 'dev_2', name: 'OnePlus 12 (Discovered)', status: 'discovered' },
-    { id: 'dev_3', name: 'Pixel 8 Pro (Discovered)', status: 'discovered' }
-  ]);
 
   // Sync dual theme selection globally
   useEffect(() => {
@@ -306,22 +308,76 @@ const PlayTab: React.FC = () => {
     setIsClockRunning(true);
   };
 
-  // Bluetooth scanning triggers
-  const startBluetoothScan = () => {
-    setIsBtScanning(true);
-    setToastMessage('Searching local bluetooth frequencies...');
+  // Local Wi-Fi peer scanning triggers
+  const startWifiScan = () => {
+    setIsWifiScanning(true);
+    setToastMessage('Broadcasting UDP discovery beacon on subnet...');
     setTimeout(() => {
-      setIsBtScanning(false);
-    }, 3000);
+      setIsWifiScanning(false);
+      setToastMessage('UDP discovery complete. Found active Wi-Fi chess peers.');
+    }, 2000);
   };
 
-  const connectToBtDevice = (device: BluetoothDevice) => {
-    setBtDevices((prev) => prev.map((d) => d.id === device.id ? { ...d, status: 'connecting' } : d));
+  const connectToWifiPeer = (peer: WifiPeer) => {
+    setWifiPeers((prev) => prev.map((p) => p.id === peer.id ? { ...p, status: 'connecting' } : p));
     setTimeout(() => {
-      setBtDevices((prev) => prev.map((d) => d.id === device.id ? { ...d, status: 'paired' } : d));
-      setConnectedBtDevice(device.name);
-      setToastMessage(`Connected via Bluetooth to ${device.name}! Ready to play locally.`);
+      setWifiPeers((prev) => prev.map((p) => p.id === peer.id ? { ...p, status: 'connected' } : p));
+      setConnectedWifiPeer(`${peer.name} (${peer.ipAddress})`);
+      setToastMessage(`Wi-Fi Chess P2P connection established with ${peer.ipAddress}!`);
     }, 1500);
+  };
+
+  // Unified Editorial Card Styling Generator (Dynamically supporting pastel color block system in Light Mode)
+  const getCardStyle = (mode: 'online' | 'computer' | 'wifi' | 'tournaments') => {
+    if (isDarkMode) {
+      return {
+        background: 'var(--luxury-card-bg)',
+        text: 'var(--ion-text-color)',
+        muted: 'var(--luxury-text-muted)',
+        arrowBg: 'var(--luxury-gold-subtle)',
+        arrowBorder: 'var(--luxury-border)',
+        arrowColor: 'var(--luxury-gold)'
+      };
+    }
+    switch (mode) {
+      case 'online':
+        return {
+          background: '#D4DCF9', // Sophisticated pastel lavender/blue
+          text: '#1A1E26',
+          muted: 'rgba(26, 30, 38, 0.7)',
+          arrowBg: 'rgba(26, 30, 38, 0.05)',
+          arrowBorder: 'rgba(26, 30, 38, 0.1)',
+          arrowColor: '#1A1E26'
+        };
+      case 'computer':
+        return {
+          background: '#EDE4B6', // Warm muted champagne/yellow
+          text: '#1A1E26',
+          muted: 'rgba(26, 30, 38, 0.7)',
+          arrowBg: 'rgba(26, 30, 38, 0.05)',
+          arrowBorder: 'rgba(26, 30, 38, 0.1)',
+          arrowColor: '#1A1E26'
+        };
+      case 'wifi':
+        return {
+          background: '#C7DFD9', // Natural soft sage green/mint
+          text: '#1A1E26',
+          muted: 'rgba(26, 30, 38, 0.7)',
+          arrowBg: 'rgba(26, 30, 38, 0.05)',
+          arrowBorder: 'rgba(26, 30, 38, 0.1)',
+          arrowColor: '#1A1E26'
+        };
+      case 'tournaments':
+      default:
+        return {
+          background: '#ECDCD6', // Soft muted peach/rose
+          text: '#1A1E26',
+          muted: 'rgba(26, 30, 38, 0.7)',
+          arrowBg: 'rgba(26, 30, 38, 0.05)',
+          arrowBorder: 'rgba(26, 30, 38, 0.1)',
+          arrowColor: '#1A1E26'
+        };
+    }
   };
 
   return (
@@ -331,21 +387,21 @@ const PlayTab: React.FC = () => {
         <IonToolbar style={{ 
           '--background': 'var(--ion-background-color)', 
           '--color': 'var(--ion-text-color)',
-          padding: '10px 10px 0 10px',
+          padding: '10px 16px 0 16px', // Standardized unified left gutter (16px)
           transition: 'background-color 0.3s ease'
         }}>
           {activeView !== 'dashboard' ? (
             <IonButton 
               slot="start" 
               fill="clear" 
-              style={{ '--color': 'var(--luxury-gold)', fontWeight: '500', fontSize: '14px' }}
+              style={{ '--color': 'var(--luxury-gold)', fontWeight: '500', fontSize: '14px', paddingLeft: '0' }}
               onClick={() => setActiveView(activeView === 'board' ? 'setup' : 'dashboard')}
             >
               <IonIcon icon={arrowBackOutline} slot="start" style={{ fontSize: '16px' }} />
               Back
             </IonButton>
           ) : (
-            /* Sleek Editorial Header Logo Placeholder */
+            /* Sleek Editorial Header Logo Placeholder (Aligned perfectly on the left vertical grid) */
             <div slot="start" style={{ 
               display: 'flex', 
               alignItems: 'center', 
@@ -354,7 +410,7 @@ const PlayTab: React.FC = () => {
               fontWeight: '800', 
               letterSpacing: '2px',
               color: 'var(--ion-text-color)',
-              paddingLeft: '10px'
+              paddingLeft: '0' // Zero offset to lock perfectly with greeting
             }}>
               ◈ CHESS ROOM
             </div>
@@ -369,7 +425,7 @@ const PlayTab: React.FC = () => {
             fontWeight: '700',
             letterSpacing: '1px',
             cursor: 'pointer',
-            paddingRight: '10px',
+            paddingRight: '0',
             color: 'var(--luxury-gold)',
             textTransform: 'uppercase'
           }}>
@@ -388,11 +444,11 @@ const PlayTab: React.FC = () => {
         {/* VIEW 1: EDITORIAL LUXURY MINIMALIST DASHBOARD VIEW        */}
         {/* ========================================================= */}
         {activeView === 'dashboard' && (
-          <div className="ion-padding" style={{ 
+          <div style={{ 
             maxWidth: '520px', 
             margin: '0 auto', 
             color: 'var(--ion-text-color)',
-            paddingTop: '20px'
+            padding: '20px 16px' // Exact standardized horizontal grid margins
           }}>
             
             {/* Top Luxury Header with Editorial Typography Hierarchy */}
@@ -401,7 +457,7 @@ const PlayTab: React.FC = () => {
               alignItems: 'center', 
               justifyContent: 'space-between',
               marginBottom: '35px',
-              padding: '0 5px'
+              padding: '0' // Removed extra offsets to maintain a strict vertical line
             }}>
               <div>
                 <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--luxury-gold)', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
@@ -431,7 +487,8 @@ const PlayTab: React.FC = () => {
                   height: '44px', 
                   border: '1.5px solid var(--luxury-gold)',
                   padding: '2px',
-                  backgroundColor: 'var(--luxury-card-bg)'
+                  backgroundColor: 'var(--luxury-card-bg)',
+                  transition: 'background-color 0.3s ease'
                 }}>
                   <div style={{
                     width: '100%',
@@ -444,7 +501,7 @@ const PlayTab: React.FC = () => {
                     justifyContent: 'center',
                     fontWeight: '800',
                     fontSize: '15px',
-                    transition: 'color 0.3s ease'
+                    transition: 'color 0.3s ease, background-color 0.3s ease'
                   }}>
                     {(currentUser?.username || 'G')[0].toUpperCase()}
                   </div>
@@ -452,7 +509,7 @@ const PlayTab: React.FC = () => {
               </div>
             </div>
 
-            {/* Asymmetrical Primary Action Cards Grid (Soft Oversized Border Radii 24px) */}
+            {/* Standardized 2x2 Balanced Action Cards Grid (Soft Oversized Border Radii 24px) */}
             <IonGrid style={{ padding: 0, marginBottom: '25px' }}>
               <IonRow style={{ margin: '0 -8px' }}>
                 
@@ -466,7 +523,8 @@ const PlayTab: React.FC = () => {
                     style={{
                       height: '165px',
                       borderRadius: '24px', 
-                      backgroundColor: 'var(--luxury-card-bg)', 
+                      backgroundColor: getCardStyle('online').background, 
+                      color: getCardStyle('online').text,
                       padding: '22px', 
                       display: 'flex',
                       flexDirection: 'column',
@@ -487,13 +545,13 @@ const PlayTab: React.FC = () => {
                       width: '26px',
                       height: '26px',
                       borderRadius: '50%',
-                      backgroundColor: 'var(--luxury-gold-subtle)',
+                      backgroundColor: getCardStyle('online').arrowBg,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
-                      color: 'var(--luxury-gold)',
-                      border: '1px solid var(--luxury-border)',
+                      color: getCardStyle('online').arrowColor,
+                      border: getCardStyle('online').arrowBorder,
                       zIndex: 2
                     }}>
                       ↗
@@ -506,9 +564,9 @@ const PlayTab: React.FC = () => {
                       right: '-15px',
                       width: '90px',
                       height: '90px',
-                      opacity: 0.08,
+                      opacity: isDarkMode ? 0.08 : 0.12,
                       pointerEvents: 'none',
-                      color: 'var(--ion-text-color)'
+                      color: getCardStyle('online').text
                     }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
                       <circle cx="50" cy="50" r="40" />
                       <ellipse cx="50" cy="50" rx="40" ry="15" />
@@ -517,10 +575,10 @@ const PlayTab: React.FC = () => {
                       <line x1="10" y1="50" x2="90" y2="50" />
                     </svg>
 
-                    <IonIcon icon={globeOutline} style={{ fontSize: '26px', color: 'var(--luxury-gold)' }} />
+                    <IonIcon icon={globeOutline} style={{ fontSize: '26px', color: getCardStyle('online').arrowColor }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>Play Online</h3>
-                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Challenge players worldwide in real-time lobbies.</p>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('online').text }}>Play Online</h3>
+                      <p style={{ fontSize: '10px', color: getCardStyle('online').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Challenge players worldwide in real-time lobbies.</p>
                     </div>
                   </div>
                 </IonCol>
@@ -535,7 +593,8 @@ const PlayTab: React.FC = () => {
                     style={{
                       height: '165px',
                       borderRadius: '24px', 
-                      backgroundColor: 'var(--luxury-card-bg)', 
+                      backgroundColor: getCardStyle('computer').background, 
+                      color: getCardStyle('computer').text,
                       padding: '22px', 
                       display: 'flex',
                       flexDirection: 'column',
@@ -556,13 +615,13 @@ const PlayTab: React.FC = () => {
                       width: '26px',
                       height: '26px',
                       borderRadius: '50%',
-                      backgroundColor: 'var(--luxury-gold-subtle)',
+                      backgroundColor: getCardStyle('computer').arrowBg,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
-                      color: 'var(--luxury-gold)',
-                      border: '1px solid var(--luxury-border)',
+                      color: getCardStyle('computer').arrowColor,
+                      border: getCardStyle('computer').arrowBorder,
                       zIndex: 2
                     }}>
                       ↗
@@ -575,9 +634,9 @@ const PlayTab: React.FC = () => {
                       right: '-10px',
                       width: '85px',
                       height: '85px',
-                      opacity: 0.08,
+                      opacity: isDarkMode ? 0.08 : 0.12,
                       pointerEvents: 'none',
-                      color: 'var(--ion-text-color)'
+                      color: getCardStyle('computer').text
                     }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
                       <rect x="25" y="25" width="50" height="50" rx="8" />
                       <rect x="38" y="38" width="24" height="24" rx="4" />
@@ -591,29 +650,29 @@ const PlayTab: React.FC = () => {
                       <circle cx="90" cy="50" r="3" fill="currentColor" />
                     </svg>
 
-                    <IonIcon icon={hardwareChipOutline} style={{ fontSize: '26px', color: 'var(--luxury-gold)' }} />
+                    <IonIcon icon={hardwareChipOutline} style={{ fontSize: '26px', color: getCardStyle('computer').arrowColor }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>vs Computer</h3>
-                      <p style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', margin: 0, lineHeight: '1.3', fontWeight: '300' }}>Practice offline vs Stockfish engine settings.</p>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('computer').text }}>vs Computer</h3>
+                      <p style={{ fontSize: '10px', color: getCardStyle('computer').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Practice offline vs Stockfish engine settings.</p>
                     </div>
                   </div>
                 </IonCol>
 
-                {/* Card 3: Local Multiplayer (size="12", full-width below them) */}
-                <IonCol size="12" style={{ padding: '0 8px' }}>
+                {/* Card 3: Local Multiplayer (size="6") */}
+                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
-                      setGameMode('bluetooth');
+                      setGameMode('wifi');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '115px',
+                      height: '165px',
                       borderRadius: '24px', 
-                      backgroundColor: 'var(--luxury-card-bg)', 
+                      backgroundColor: getCardStyle('wifi').background, 
+                      color: getCardStyle('wifi').text,
                       padding: '22px', 
                       display: 'flex',
-                      flexDirection: 'row',
-                      alignItems: 'center',
+                      flexDirection: 'column',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
                       border: '1px solid var(--luxury-border)',
@@ -631,53 +690,103 @@ const PlayTab: React.FC = () => {
                       width: '26px',
                       height: '26px',
                       borderRadius: '50%',
-                      backgroundColor: 'var(--luxury-gold-subtle)',
+                      backgroundColor: getCardStyle('wifi').arrowBg,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
-                      color: 'var(--luxury-gold)',
-                      border: '1px solid var(--luxury-border)',
+                      color: getCardStyle('wifi').arrowColor,
+                      border: getCardStyle('wifi').arrowBorder,
                       zIndex: 2
                     }}>
                       ↗
                     </div>
 
-                    {/* Placeholder Vector Graphic 3: Dual device pairing waves (Bottom-Right aligned) */}
+                    {/* Placeholder Vector Graphic 3: Wi-Fi P2P subnet waves (Bottom-Right aligned) */}
                     <svg style={{
                       position: 'absolute',
-                      bottom: '-5px',
-                      right: '30px',
+                      bottom: '-15px',
+                      right: '-15px',
                       width: '90px',
                       height: '90px',
-                      opacity: 0.08,
+                      opacity: isDarkMode ? 0.08 : 0.12,
                       pointerEvents: 'none',
-                      color: 'var(--ion-text-color)'
+                      color: getCardStyle('wifi').text
                     }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
-                      <rect x="15" y="30" width="22" height="40" rx="4" />
-                      <rect x="63" y="30" width="22" height="40" rx="4" />
-                      <path d="M45,40 Q50,45 45,50" />
-                      <path d="M55,40 Q50,45 55,50" />
-                      <circle cx="50" cy="45" r="2" fill="currentColor" />
+                      <path d="M10,80 A60,60 0 0,1 90,80" />
+                      <path d="M25,80 A40,40 0 0,1 75,80" />
+                      <path d="M40,80 A20,20 0 0,1 60,80" />
+                      <circle cx="50" cy="80" r="4" fill="currentColor" />
                     </svg>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '18px', zIndex: 1 }}>
-                      <div style={{
-                        width: '46px',
-                        height: '46px',
-                        borderRadius: '16px',
-                        backgroundColor: 'var(--luxury-gold-subtle)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--luxury-gold)'
-                      }}>
-                        <IonIcon icon={bluetoothOutline} style={{ fontSize: '22px' }} />
-                      </div>
-                      <div>
-                        <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '0 0 2px 0', color: 'var(--ion-text-color)' }}>Local Multiplayer</h3>
-                        <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: 0, fontWeight: '300' }}>Play face-to-face offline via Local Bluetooth antenna.</p>
-                      </div>
+                    <IonIcon icon={wifiOutline} style={{ fontSize: '26px', color: getCardStyle('wifi').arrowColor }} />
+                    <div style={{ zIndex: 1 }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('wifi').text }}>Local Wi-Fi</h3>
+                      <p style={{ fontSize: '10px', color: getCardStyle('wifi').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Direct P2P multiplayer link over shared Wi-Fi.</p>
+                    </div>
+                  </div>
+                </IonCol>
+
+                {/* Card 4: Tournaments (Coming Soon) (size="6") */}
+                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
+                  <div 
+                    style={{
+                      height: '165px',
+                      borderRadius: '24px', 
+                      backgroundColor: getCardStyle('tournaments').background, 
+                      color: getCardStyle('tournaments').text,
+                      padding: '22px', 
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      border: '1px solid var(--luxury-border)',
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      transition: 'background-color 0.3s ease'
+                    }}
+                  >
+                    {/* Small Locked / Coming Soon Badge in corner */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '18px',
+                      right: '18px',
+                      padding: '4px 8px',
+                      borderRadius: '8px',
+                      fontSize: '8px',
+                      fontWeight: '800',
+                      letterSpacing: '0.5px',
+                      background: isDarkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(26, 30, 38, 0.08)',
+                      color: isDarkMode ? 'var(--luxury-gold)' : '#1A1E26',
+                      border: isDarkMode ? '1px solid var(--luxury-border)' : '1px solid rgba(26, 30, 38, 0.1)',
+                      zIndex: 2
+                    }}>
+                      SOON
+                    </div>
+
+                    {/* Placeholder Vector Graphic 4: Brackets/Trophy Outline (Bottom-Right aligned) */}
+                    <svg style={{
+                      position: 'absolute',
+                      bottom: '-10px',
+                      right: '-10px',
+                      width: '85px',
+                      height: '85px',
+                      opacity: isDarkMode ? 0.08 : 0.12,
+                      pointerEvents: 'none',
+                      color: getCardStyle('tournaments').text
+                    }} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
+                      <path d="M30,30 L70,30 L70,45 L30,45 Z" />
+                      <path d="M40,45 L40,70 L60,70 L60,45" />
+                      <path d="M35,80 L65,80" />
+                      <line x1="50" y1="70" x2="50" y2="80" />
+                      <path d="M30,35 H20 V40 H30" />
+                      <path d="M70,35 H80 V40 H70" />
+                    </svg>
+
+                    <IonIcon icon={trophyOutline} style={{ fontSize: '26px', color: getCardStyle('tournaments').arrowColor, opacity: 0.6 }} />
+                    <div style={{ zIndex: 1 }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('tournaments').text, opacity: 0.8 }}>Tournaments</h3>
+                      <p style={{ fontSize: '10px', color: getCardStyle('tournaments').muted, margin: 0, lineHeight: '1.3', fontWeight: '400', opacity: 0.8 }}>Join structured local brackets and arenas.</p>
                     </div>
                   </div>
                 </IonCol>
@@ -697,7 +806,8 @@ const PlayTab: React.FC = () => {
               alignItems: 'center',
               boxShadow: 'var(--luxury-card-shadow)',
               position: 'relative',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'background-color 0.3s ease'
             }}>
               <div>
                 <span style={{ 
@@ -763,7 +873,8 @@ const PlayTab: React.FC = () => {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       border: '1px solid var(--luxury-border)',
-                      boxShadow: 'var(--luxury-card-shadow)'
+                      boxShadow: 'var(--luxury-card-shadow)',
+                      transition: 'background-color 0.3s ease'
                     }}
                   >
                     <div>
@@ -825,58 +936,63 @@ const PlayTab: React.FC = () => {
                 <IonSegmentButton value="friend" style={{ margin: '2px' }}>
                   <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Friend Lobby</IonLabel>
                 </IonSegmentButton>
-                <IonSegmentButton value="bluetooth" style={{ margin: '2px' }}>
-                  <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Bluetooth P2P</IonLabel>
+                <IonSegmentButton value="wifi" style={{ margin: '2px' }}>
+                  <IonLabel style={{ fontSize: '11px', fontWeight: '600' }}>Local Wi-Fi</IonLabel>
                 </IonSegmentButton>
               </IonSegment>
             </div>
 
-            {/* Sub-view: Bluetooth Offline scans */}
-            {gameMode === 'bluetooth' && (
+            {/* Sub-view: Local Wi-Fi socket peer scans */}
+            {gameMode === 'wifi' && (
               <div style={{ 
                 backgroundColor: 'var(--luxury-card-bg)', 
                 borderRadius: '24px', 
                 padding: '22px', 
                 marginBottom: '20px', 
                 border: '1px solid var(--luxury-border)',
-                boxShadow: 'var(--luxury-card-shadow)'
+                boxShadow: 'var(--luxury-card-shadow)',
+                transition: 'background-color 0.3s ease'
               }}>
                 <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <IonIcon icon={bluetoothOutline} />
-                  Bluetooth Local Pairing
+                  <IonIcon icon={wifiOutline} />
+                  Local Wi-Fi Subnet Peer Scan
                 </h3>
                 
-                {isBtScanning ? (
+                {isWifiScanning ? (
                   <div style={{ textAlign: 'center', padding: '20px 0' }}>
                     <IonSpinner name="crescent" style={{ '--color': 'var(--luxury-gold)' }} />
-                    <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: 'var(--luxury-text-muted)' }}>Scanning peer signals...</p>
+                    <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: 'var(--luxury-text-muted)' }}>Broadcasting UDP discovery ping...</p>
                   </div>
                 ) : (
                   <div>
-                    {connectedBtDevice ? (
+                    {connectedWifiPeer ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#81B64C', fontSize: '13px', margin: '5px 0 12px 0', fontWeight: '600' }}>
                         <IonIcon icon={checkmarkCircleOutline} />
-                        Connected to: {connectedBtDevice}
+                        Connected Peer: {connectedWifiPeer}
                       </div>
                     ) : (
-                      <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: '0 0 14px 0', fontWeight: '300' }}>Scan to connect and play local match offline with a nearby device.</p>
+                      <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: '0 0 14px 0', fontWeight: '300' }}>Discover devices connected to the same local Wi-Fi router for zero-lag local battles.</p>
                     )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
-                      {btDevices.map((dev) => (
-                        <div key={dev.id} style={{
+                      {wifiPeers.map((peer) => (
+                        <div key={peer.id} style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           backgroundColor: 'var(--ion-background-color)',
                           padding: '10px 14px',
                           borderRadius: '12px',
-                          border: '1px solid var(--luxury-border)'
+                          border: '1px solid var(--luxury-border)',
+                          transition: 'background-color 0.3s ease'
                         }}>
-                          <span style={{ fontSize: '12px', fontWeight: '500' }}>{dev.name}</span>
-                          {dev.status === 'discovered' && (
+                          <div>
+                            <span style={{ fontSize: '12px', fontWeight: '500', display: 'block' }}>{peer.name}</span>
+                            <span style={{ fontSize: '9px', color: 'var(--luxury-text-muted)' }}>IP: {peer.ipAddress}</span>
+                          </div>
+                          {peer.status === 'available' && (
                             <button 
-                              onClick={() => connectToBtDevice(dev)}
+                              onClick={() => connectToWifiPeer(peer)}
                               style={{
                                 background: 'var(--luxury-gold-subtle)',
                                 border: '1px solid var(--luxury-gold)',
@@ -888,17 +1004,17 @@ const PlayTab: React.FC = () => {
                                 cursor: 'pointer'
                               }}
                             >
-                              Pair
+                              Connect
                             </button>
                           )}
-                          {dev.status === 'connecting' && <IonSpinner name="dots" style={{ '--color': 'var(--luxury-gold)' }} />}
-                          {dev.status === 'paired' && <IonIcon icon={checkmarkCircleOutline} style={{ color: '#81B64C' }} />}
+                          {peer.status === 'connecting' && <IonSpinner name="dots" style={{ '--color': 'var(--luxury-gold)' }} />}
+                          {peer.status === 'connected' && <IonIcon icon={checkmarkCircleOutline} style={{ color: '#81B64C' }} />}
                         </div>
                       ))}
                     </div>
 
                     <button 
-                      onClick={startBluetoothScan}
+                      onClick={startWifiScan}
                       style={{
                         width: '100%',
                         backgroundColor: 'var(--luxury-gold-subtle)',
@@ -911,7 +1027,7 @@ const PlayTab: React.FC = () => {
                         fontSize: '12px'
                       }}
                     >
-                      Scan Local Antennas
+                      Broadcasting Local Wi-Fi Subnet Scan
                     </button>
                   </div>
                 )}
@@ -926,7 +1042,8 @@ const PlayTab: React.FC = () => {
                 padding: '22px', 
                 marginBottom: '20px', 
                 border: '1px solid var(--luxury-border)',
-                boxShadow: 'var(--luxury-card-shadow)'
+                boxShadow: 'var(--luxury-card-shadow)',
+                transition: 'background-color 0.3s ease'
               }}>
                 <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <IonIcon icon={linkOutline} />
@@ -956,7 +1073,7 @@ const PlayTab: React.FC = () => {
                     {isLobbyConnecting ? 'Generating Tunnel...' : 'Generate Challenge Code'}
                   </button>
                 ) : (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--ion-background-color)', padding: '10px 14px', borderRadius: '12px', border: '1px solid var(--luxury-border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--ion-background-color)', padding: '10px 14px', borderRadius: '12px', border: '1px solid var(--luxury-border)', transition: 'background-color 0.3s ease' }}>
                     <span style={{ fontSize: '13px', color: '#81B64C', fontWeight: '700' }}>Lobby Code: {roomCode}</span>
                     <button 
                       onClick={() => {
@@ -1158,7 +1275,7 @@ const PlayTab: React.FC = () => {
             {/* Launch Active Game Button */}
             <button 
               onClick={handleHostGame}
-              disabled={(gameMode === 'friend' && !roomCode) || (gameMode === 'bluetooth' && !connectedBtDevice)}
+              disabled={(gameMode === 'friend' && !roomCode) || (gameMode === 'wifi' && !connectedWifiPeer)}
               style={{ 
                 width: '100%',
                 backgroundColor: 'var(--luxury-gold)', 
@@ -1174,7 +1291,7 @@ const PlayTab: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                transition: 'opacity 0.2s'
+                transition: 'opacity 0.2s, background-color 0.3s ease, color 0.3s ease'
               }}
             >
               {gameMode === 'computer' ? (
@@ -1190,7 +1307,7 @@ const PlayTab: React.FC = () => {
               ) : (
                 <>
                   <IonIcon icon={wifiOutline} />
-                  Host Local Bluetooth Match
+                  Host Local Wi-Fi Match
                 </>
               )}
             </button>
