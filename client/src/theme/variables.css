@@ -63,3 +63,29 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--luxury-gold);
 }
+
+/* Responsive visibility for dynamic chess layout profiles */
+@media (min-width: 768px) {
+  .mobile-profile {
+    display: none !important;
+  }
+}
+@media (max-width: 767px) {
+  .desktop-profile {
+    display: none !important;
+  }
+}
+
+.right-panel-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .right-panel-container {
+    height: 550px;
+    justify-content: space-between;
+    gap: 12px;
+  }
+}
