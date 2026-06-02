@@ -657,7 +657,7 @@ const PlayTab: React.FC = () => {
                 
                 {/* Single sentence mixed font-weights to emphasize focus keyword exactly */}
                 <h1 style={{ 
-                  fontSize: '26px', 
+                  fontSize: 'clamp(32px, 5vw, 42px)', 
                   margin: 0, 
                   letterSpacing: '-0.5px',
                   color: 'var(--ion-text-color)',
@@ -704,19 +704,19 @@ const PlayTab: React.FC = () => {
             <IonGrid style={{ padding: 0, marginBottom: '25px' }}>
               <IonRow style={{ margin: '0 -8px' }}>
                 
-                {/* Card 1: Play Online (size="6") */}
-                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
+                {/* Card 1: Play Online */}
+                <IonCol size="12" sizeMd="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
                       setGameMode('friend');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '165px',
+                      height: 'clamp(170px, 25vw, 200px)',
                       borderRadius: '24px', 
                       backgroundColor: getCardStyle('online').background, 
                       color: getCardStyle('online').text,
-                      padding: '22px', 
+                      padding: 'clamp(24px, 5vw, 32px)', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
@@ -768,25 +768,25 @@ const PlayTab: React.FC = () => {
 
                     <IonIcon icon={globeOutline} style={{ fontSize: '26px', color: getCardStyle('online').arrowColor }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('online').text }}>Play Online</h3>
-                      <p style={{ fontSize: '10px', color: getCardStyle('online').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Challenge players worldwide in real-time lobbies.</p>
+                      <h3 style={{ fontSize: 'clamp(18px, 3vw, 22px)', fontWeight: '700', margin: '0 0 6px 0', color: getCardStyle('online').text }}>Play Online</h3>
+                      <p style={{ fontSize: 'clamp(13px, 1.8vw, 15px)', color: getCardStyle('online').muted, margin: 0, lineHeight: '1.4', fontWeight: '400' }}>Challenge players worldwide in real-time lobbies.</p>
                     </div>
                   </div>
                 </IonCol>
 
-                {/* Card 2: vs Computer (size="6") */}
-                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
+                {/* Card 2: vs Computer */}
+                <IonCol size="12" sizeMd="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
                       setGameMode('computer');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '165px',
+                      height: 'clamp(170px, 25vw, 200px)',
                       borderRadius: '24px', 
                       backgroundColor: getCardStyle('computer').background, 
                       color: getCardStyle('computer').text,
-                      padding: '22px', 
+                      padding: 'clamp(24px, 5vw, 32px)', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
@@ -843,25 +843,25 @@ const PlayTab: React.FC = () => {
 
                     <IonIcon icon={hardwareChipOutline} style={{ fontSize: '26px', color: getCardStyle('computer').arrowColor }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('computer').text }}>vs Computer</h3>
-                      <p style={{ fontSize: '10px', color: getCardStyle('computer').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Practice offline vs Stockfish engine settings.</p>
+                      <h3 style={{ fontSize: 'clamp(18px, 3vw, 22px)', fontWeight: '700', margin: '0 0 6px 0', color: getCardStyle('computer').text }}>vs Computer</h3>
+                      <p style={{ fontSize: 'clamp(13px, 1.8vw, 15px)', color: getCardStyle('computer').muted, margin: 0, lineHeight: '1.4', fontWeight: '400' }}>Practice offline vs Stockfish engine settings.</p>
                     </div>
                   </div>
                 </IonCol>
 
-                {/* Card 3: Local Multiplayer (size="6") */}
-                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
+                {/* Card 3: Local Multiplayer */}
+                <IonCol size="12" sizeMd="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     onClick={() => {
                       setGameMode('wifi');
                       setActiveView('setup');
                     }}
                     style={{
-                      height: '165px',
+                      height: 'clamp(170px, 25vw, 200px)',
                       borderRadius: '24px', 
                       backgroundColor: getCardStyle('wifi').background, 
                       color: getCardStyle('wifi').text,
-                      padding: '22px', 
+                      padding: 'clamp(24px, 5vw, 32px)', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
@@ -912,21 +912,21 @@ const PlayTab: React.FC = () => {
 
                     <IonIcon icon={wifiOutline} style={{ fontSize: '26px', color: getCardStyle('wifi').arrowColor }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('wifi').text }}>Local Wi-Fi</h3>
-                      <p style={{ fontSize: '10px', color: getCardStyle('wifi').muted, margin: 0, lineHeight: '1.3', fontWeight: '400' }}>Direct P2P multiplayer link over shared Wi-Fi.</p>
+                      <h3 style={{ fontSize: 'clamp(18px, 3vw, 22px)', fontWeight: '700', margin: '0 0 6px 0', color: getCardStyle('wifi').text }}>Local Wi-Fi</h3>
+                      <p style={{ fontSize: 'clamp(13px, 1.8vw, 15px)', color: getCardStyle('wifi').muted, margin: 0, lineHeight: '1.4', fontWeight: '400' }}>Direct P2P multiplayer link over shared Wi-Fi.</p>
                     </div>
                   </div>
                 </IonCol>
 
-                {/* Card 4: Tournaments (Coming Soon) (size="6") */}
-                <IonCol size="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
+                {/* Card 4: Tournaments (Coming Soon) */}
+                <IonCol size="12" sizeMd="6" style={{ padding: '0 8px', marginBottom: '16px' }}>
                   <div 
                     style={{
-                      height: '165px',
+                      height: 'clamp(170px, 25vw, 200px)',
                       borderRadius: '24px', 
                       backgroundColor: getCardStyle('tournaments').background, 
                       color: getCardStyle('tournaments').text,
-                      padding: '22px', 
+                      padding: 'clamp(24px, 5vw, 32px)', 
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
@@ -976,8 +976,8 @@ const PlayTab: React.FC = () => {
 
                     <IonIcon icon={trophyOutline} style={{ fontSize: '26px', color: getCardStyle('tournaments').arrowColor, opacity: 0.6 }} />
                     <div style={{ zIndex: 1 }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0', color: getCardStyle('tournaments').text, opacity: 0.8 }}>Tournaments</h3>
-                      <p style={{ fontSize: '10px', color: getCardStyle('tournaments').muted, margin: 0, lineHeight: '1.3', fontWeight: '400', opacity: 0.8 }}>Join structured local brackets and arenas.</p>
+                      <h3 style={{ fontSize: 'clamp(18px, 3vw, 22px)', fontWeight: '700', margin: '0 0 6px 0', color: getCardStyle('tournaments').text, opacity: 0.8 }}>Tournaments</h3>
+                      <p style={{ fontSize: 'clamp(13px, 1.8vw, 15px)', color: getCardStyle('tournaments').muted, margin: 0, lineHeight: '1.4', fontWeight: '400', opacity: 0.8 }}>Join structured local brackets and arenas.</p>
                     </div>
                   </div>
                 </IonCol>
@@ -1016,10 +1016,10 @@ const PlayTab: React.FC = () => {
                 </span>
                 
                 {/* Mixed weight typography sentence */}
-                <h3 style={{ fontSize: '18px', fontWeight: '300', margin: '0 0 4px 0', color: 'var(--ion-text-color)', letterSpacing: '-0.3px' }}>
+                <h3 style={{ fontSize: 'clamp(20px, 3.5vw, 26px)', fontWeight: '300', margin: '0 0 6px 0', color: 'var(--ion-text-color)', letterSpacing: '-0.3px' }}>
                   Solve today's <span style={{ fontWeight: '800' }}>Daily Puzzle</span>
                 </h3>
-                <p style={{ fontSize: '11px', color: 'var(--luxury-text-muted)', margin: 0, fontWeight: '300' }}>Mate in 3 • 14,204 solved today</p>
+                <p style={{ fontSize: 'clamp(13px, 1.8vw, 15px)', color: 'var(--luxury-text-muted)', margin: 0, fontWeight: '300' }}>Mate in 3 • 14,204 solved today</p>
               </div>
 
               {/* Northeast clickability arrow indicator */}
