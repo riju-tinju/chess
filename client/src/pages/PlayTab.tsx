@@ -135,11 +135,110 @@ const PlayTab: React.FC = () => {
   const [isLobbyConnecting, setIsLobbyConnecting] = useState<boolean>(false);
 
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+
+  const playSound = (type: 'move' | 'capture' | 'check' | 'castle' | 'gameover') => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const now = ctx.currentTime;
+
+      if (type === 'move') {
+        // Clean wood-tap click
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(400, now + 0.06);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      } else if (type === 'capture') {
+        // Punchy strike with noise burst
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.18);
+        // Add noise burst
+        const bufferSize = ctx.sampleRate * 0.05;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
+        const noise = ctx.createBufferSource();
+        const noiseGain = ctx.createGain();
+        noise.buffer = buffer;
+        noiseGain.gain.setValueAtTime(0.25, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        noise.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+        noise.start(now);
+      } else if (type === 'check') {
+        // Sharp alert bell tone
+        [1200, 1600].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + i * 0.08);
+          gain.gain.setValueAtTime(0.3, now + i * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.12);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + i * 0.08);
+          osc.stop(now + i * 0.08 + 0.12);
+        });
+      } else if (type === 'castle') {
+        // Double click — two rapid taps
+        [0, 0.09].forEach((offset) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(700, now + offset);
+          osc.frequency.exponentialRampToValueAtTime(350, now + offset + 0.06);
+          gain.gain.setValueAtTime(0.3, now + offset);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.07);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + offset);
+          osc.stop(now + offset + 0.07);
+        });
+      } else if (type === 'gameover') {
+        // Descending chime sequence
+        const notes = [880, 660, 440, 330];
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + i * 0.15);
+          gain.gain.setValueAtTime(0.25, now + i * 0.15);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.15 + 0.2);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + i * 0.15);
+          osc.stop(now + i * 0.15 + 0.2);
+        });
+      }
+
+      // Auto-close context after sounds finish
+      setTimeout(() => ctx.close().catch(() => {}), 1500);
+    } catch (err) {
+      console.warn('Audio synthesis failed:', err);
+    }
+  };
+
   const handleResign = () => {
     // Show confirmation modal (IonAlert) – simplified here with browser confirm.
     if (window.confirm('Are you sure you want to resign?')) {
       setGameStatus(selectedColor === 'white' ? 'White resigned' : 'Black resigned');
       setIsClockRunning(false);
+      playSound('gameover');
     }
   };
   // Move navigation state
@@ -227,6 +326,7 @@ const PlayTab: React.FC = () => {
             if (prev <= 1) {
               setGameStatus('Black wins on time!');
               setIsClockRunning(false);
+              playSound('gameover');
               return 0;
             }
             return prev - 1;
@@ -236,6 +336,7 @@ const PlayTab: React.FC = () => {
             if (prev <= 1) {
               setGameStatus('White wins on time!');
               setIsClockRunning(false);
+              playSound('gameover');
               return 0;
             }
             return prev - 1;
@@ -265,13 +366,26 @@ const PlayTab: React.FC = () => {
           const promotion = bestMove.length > 4 ? bestMove[4] : undefined;
           
           try {
-            chess.move({ from, to, promotion });
+            const move = chess.move({ from, to, promotion });
             setLastMove({ from, to });
             if (increment > 0) setBlackTime((t) => t + increment);
             setGameFen(chess.fen());
             setHistory(chess.history());
+            setMoveIndex(chess.history().length);
             setIsEngineThinking(false);
             updateStatus();
+            
+            if (chess.isGameOver()) {
+              playSound('gameover');
+            } else if (chess.inCheck()) {
+              playSound('check');
+            } else if (move.flags.includes('c') || move.flags.includes('e')) {
+              playSound('capture');
+            } else if (move.flags.includes('k') || move.flags.includes('q')) {
+              playSound('castle');
+            } else {
+              playSound('move');
+            }
           } catch (err) {
             console.error("Invalid computer move:", err);
             setIsEngineThinking(false);
@@ -347,6 +461,19 @@ const PlayTab: React.FC = () => {
       setGameFen(chess.fen());
       setHistory(chess.history());
       updateStatus();
+      
+      if (chess.isGameOver()) {
+        playSound('gameover');
+      } else if (chess.inCheck()) {
+        playSound('check');
+      } else if (move.flags.includes('c') || move.flags.includes('e')) {
+        playSound('capture');
+      } else if (move.flags.includes('k') || move.flags.includes('q')) {
+        playSound('castle');
+      } else {
+        playSound('move');
+      }
+
       return true;
     } catch (error) {
       return false;
@@ -1589,6 +1716,17 @@ const PlayTab: React.FC = () => {
                     margin: 0 auto;
                   }
                 }
+                
+                @keyframes badgeEnterBg {
+                  0% {
+                    background-size: 60%;
+                    background-position: center center;
+                  }
+                  100% {
+                    background-size: 32%;
+                    background-position: top 4px right 4px;
+                  }
+                }
               `}
             </style>
             
@@ -1693,7 +1831,8 @@ const PlayTab: React.FC = () => {
                   <div className="chess-board-wrapper" style={{ 
                     backgroundColor: 'var(--ion-background-color)', 
                     transition: 'background-color 0.3s ease',
-                    flexGrow: 1
+                    flexGrow: 1,
+                    position: 'relative'
                   }}>
                     <Chessboard
                     position={gameFen}
@@ -1710,24 +1849,105 @@ const PlayTab: React.FC = () => {
                       }),
                       ...( (() => {
                           const currentChess = new Chess(gameFen);
-                          if (currentChess.inCheck() || currentChess.isCheckmate()) {
-                            const board = currentChess.board();
+                          const board = currentChess.board();
+                          let styles = {};
+                          
+                          const isAtLatestMove = moveIndex === history.length;
+                          const isCheckmate = currentChess.isCheckmate();
+                          const isDraw = currentChess.isDraw();
+                          const isTimeout = gameStatus.includes('wins on time');
+                          const isResign = gameStatus.includes('resigned');
+                          const inCheck = currentChess.inCheck();
+
+                          if ((isCheckmate && isAtLatestMove) || (isDraw && isAtLatestMove) || (isTimeout && isAtLatestMove) || (isResign && isAtLatestMove) || inCheck) {
+                            let loserColor = '';
+                            let winnerColor = '';
+                            
+                            if (isCheckmate) {
+                              loserColor = currentChess.turn();
+                              winnerColor = loserColor === 'w' ? 'b' : 'w';
+                            } else if (isTimeout) {
+                              loserColor = gameStatus.includes('White') ? 'b' : 'w';
+                              winnerColor = loserColor === 'w' ? 'b' : 'w';
+                            } else if (isResign) {
+                              loserColor = gameStatus.includes('White') ? 'w' : 'b';
+                              winnerColor = loserColor === 'w' ? 'b' : 'w';
+                            }
+
                             for (let i = 0; i < board.length; i++) {
                               for (let j = 0; j < board[i].length; j++) {
                                 const piece = board[i][j];
-                                if (piece && piece.type === 'k' && piece.color === currentChess.turn()) {
-                                  const isCheckmate = currentChess.isCheckmate();
-                                  return {
-                                    [piece.square]: {
-                                      backgroundColor: isCheckmate ? 'rgba(229, 57, 53, 0.8)' : 'rgba(229, 57, 53, 0.4)',
-                                      boxShadow: isCheckmate ? 'inset 0 0 10px rgba(0,0,0,0.5)' : 'none'
+                                if (piece && piece.type === 'k') {
+                                  const isLoser = piece.color === loserColor;
+                                  
+                                  let bgColor = '';
+                                  let bgShadow = '';
+                                  let svg = '';
+
+                                  if (isCheckmate && isAtLatestMove) {
+                                    if (isLoser) {
+                                      bgColor = 'rgba(229, 57, 53, 0.8)';
+                                      bgShadow = 'inset 0 0 10px rgba(0,0,0,0.5)';
+                                      // Skull Head Badge for Loser
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#E53935"/><path d="M12 4a5 5 0 0 0-5 5c0 1.5.8 2.8 2 3.6V16h6v-3.4c1.2-.8 2-2.1 2-3.6a5 5 0 0 0-5-5zm-2 5a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0zm6 0a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0zm-2 5h-4v1h4v-1z" fill="#FFF"/></svg>';
+                                    } else {
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#43A047"/><path d="M5 16l2-8 3 4 2-5 2 5 3-4 2 8H5z" fill="#FFF"/></svg>';
                                     }
-                                  };
+                                  } else if (isDraw && isAtLatestMove) {
+                                    bgColor = 'rgba(120, 144, 156, 0.5)';
+                                    bgShadow = 'inset 0 0 10px rgba(0,0,0,0.2)';
+                                    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#78909C"/><path d="M7 10h10M7 14h10" stroke="#FFF" stroke-width="2.5" stroke-linecap="round"/></svg>';
+                                  } else if (isTimeout && isAtLatestMove) {
+                                    if (isLoser) {
+                                      bgColor = 'rgba(229, 57, 53, 0.8)';
+                                      bgShadow = 'inset 0 0 10px rgba(0,0,0,0.3)';
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#FB8C00"/><path d="M12 6v6l4 4" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg>';
+                                    } else {
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#43A047"/><path d="M5 16l2-8 3 4 2-5 2 5 3-4 2 8H5z" fill="#FFF"/></svg>';
+                                    }
+                                  } else if (isResign && isAtLatestMove) {
+                                    if (isLoser) {
+                                      bgColor = 'rgba(229, 57, 53, 0.6)';
+                                      bgShadow = 'inset 0 0 10px rgba(0,0,0,0.2)';
+                                      // White Flag Badge for Resign
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#424242"/><path d="M8 5v14h2v-7h4l1 2h5V6h-5l-1-2H8z" fill="#FFF"/></svg>';
+                                    } else {
+                                      svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#43A047"/><path d="M5 16l2-8 3 4 2-5 2 5 3-4 2 8H5z" fill="#FFF"/></svg>';
+                                    }
+                                  } else if (inCheck && piece.color === currentChess.turn()) {
+                                    bgColor = 'rgba(229, 57, 53, 0.4)';
+                                    bgShadow = 'none';
+                                  }
+
+                                  if (bgColor || svg) {
+                                    styles[piece.square] = {};
+                                    if (bgColor) {
+                                      styles[piece.square] = {
+                                        backgroundColor: bgColor,
+                                        boxShadow: bgShadow
+                                      };
+                                    }
+                                    
+                                    if (svg) {
+                                      styles[piece.square] = {
+                                        ...styles[piece.square],
+                                        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")`,
+                                        backgroundRepeat: 'no-repeat',
+                                        backgroundPosition: 'top 4px right 4px',
+                                        backgroundSize: '32%',
+                                        animationName: 'badgeEnterBg',
+                                        animationDuration: '0.7s',
+                                        animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                                        animationFillMode: 'forwards'
+                                      };
+                                    }
+                                  }
                                 }
                               }
                             }
                           }
-                          return {};
+                          
+                          return styles;
                       })() )
                     }}
                   />
