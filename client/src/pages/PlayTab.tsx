@@ -1850,7 +1850,7 @@ const PlayTab: React.FC = () => {
                       ...( (() => {
                           const currentChess = new Chess(gameFen);
                           const board = currentChess.board();
-                          let styles = {};
+                          let styles: Record<string, any> = {};
                           
                           const isAtLatestMove = moveIndex === history.length;
                           const isCheckmate = currentChess.isCheckmate();
