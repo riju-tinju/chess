@@ -90,6 +90,8 @@ const PlayTab: React.FC = () => {
   // Game Engine & board setups
   const chessRef = useRef(new Chess());
   const engineRef = useRef<StockfishEngine | null>(null);
+  const evalEngineRef = useRef<StockfishEngine | null>(null);
+  const [engineEval, setEngineEval] = useState<{ type: 'cp' | 'mate', value: number } | null>(null);
   
   const [gameMode, setGameMode] = useState<GameMode>('computer');
   const [gameFen, setGameFen] = useState(chessRef.current.fen());
@@ -192,10 +194,27 @@ const PlayTab: React.FC = () => {
   // Initialize stockfish
   useEffect(() => {
     engineRef.current = new StockfishEngine();
+    evalEngineRef.current = new StockfishEngine();
     return () => {
       engineRef.current?.terminate();
+      evalEngineRef.current?.terminate();
     };
   }, []);
+
+  // Evaluate position continuously for the probability bar
+  useEffect(() => {
+    if (activeView === 'board') {
+      evalEngineRef.current?.evaluatePosition(gameFen, 12, (evalData) => {
+        const tempChess = new Chess(gameFen);
+        // Engine evaluation is relative to the side to move
+        const multiplier = tempChess.turn() === 'w' ? 1 : -1;
+        setEngineEval({
+          type: evalData.type,
+          value: evalData.value * multiplier
+        });
+      });
+    }
+  }, [gameFen, activeView]);
 
   // Clock Countdown logic
   useEffect(() => {
@@ -247,6 +266,7 @@ const PlayTab: React.FC = () => {
           
           try {
             chess.move({ from, to, promotion });
+            setLastMove({ from, to });
             if (increment > 0) setBlackTime((t) => t + increment);
             setGameFen(chess.fen());
             setHistory(chess.history());
@@ -333,8 +353,8 @@ const PlayTab: React.FC = () => {
     }
   };
 
-  const getCapturedPieces = () => {
-    const board = chessRef.current.board();
+  const getCapturedPieces = (chessInstance?: any) => {
+    const board = (chessInstance || chessRef.current).board();
     const initialCount = { w: { p: 8, n: 2, b: 2, r: 2, q: 1 }, b: { p: 8, n: 2, b: 2, r: 2, q: 1 } };
     const currentCount = { w: { p: 0, n: 0, b: 0, r: 0, q: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0 } };
     const pieceValues: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
@@ -384,10 +404,11 @@ const PlayTab: React.FC = () => {
   };
 
   const renderProfileCard = (type: 'user' | 'opponent') => {
+    const currentViewChess = new Chess(gameFen);
     const isUser = type === 'user';
     const color = isUser ? selectedColor : (selectedColor === 'white' ? 'black' : 'white');
     const timer = color === 'white' ? whiteTime : blackTime;
-    const isMyTurn = chessRef.current.turn() === (color === 'white' ? 'w' : 'b');
+    const isMyTurn = currentViewChess.turn() === (color === 'white' ? 'w' : 'b');
     const name = isUser
       ? (currentUser?.username || 'You')
       : (gameMode === 'computer' ? `Stockfish Lvl ${engineStrength}` : 'Opponent');
@@ -395,7 +416,7 @@ const PlayTab: React.FC = () => {
       ? 1500
       : (gameMode === 'computer' ? engineStrength * 200 + 400 : 1600);
 
-    const captured = getCapturedPieces();
+    const captured = getCapturedPieces(currentViewChess);
     const capturedData = color === 'white' ? captured.white : captured.black;
     const capturedPieces = capturedData.pieces;
     const materialAdvantage = capturedData.advantage;
@@ -490,6 +511,10 @@ const PlayTab: React.FC = () => {
       engineRef.current?.stop();
       setIsEngineThinking(false);
     }
+    const initialClocks = timeControl * 60;
+    setWhiteTime(initialClocks);
+    setBlackTime(initialClocks);
+    
     const newGame = new Chess();
     chessRef.current = newGame;
     setGameFen(newGame.fen());
@@ -497,6 +522,7 @@ const PlayTab: React.FC = () => {
     setMoveIndex(0);
     setGameStatus('White to move');
     setIsClockRunning(true);
+    setLastMove(null);
   };
 
   // Local Wi-Fi peer scanning triggers
@@ -1529,165 +1555,299 @@ const PlayTab: React.FC = () => {
         {/* ========================================================= */}
         {activeView === 'board' && (
           <div style={{ color: 'var(--ion-text-color)', padding: '16px 8px' }}>
-
-            {/* Split-Screen: Board + Side Panel */}
-            <IonGrid style={{ padding: 0 }}>
-              <IonRow>
-                {/* Left: Chessboard Column */}
-                <IonCol size="12" sizeMd="7" sizeLg="8" style={{ padding: '8px' }}>
+            <style>
+              {`
+                .game-layout {
+                  display: flex;
+                  flex-direction: column;
+                  gap: 16px;
+                }
+                .game-col-1, .game-col-2, .game-col-3 {
+                  width: 100%;
+                }
+                @media (min-width: 1024px) {
+                  .game-layout {
+                    flex-direction: row;
+                  }
+                  .game-col-1 { 
+                    width: 50%; 
+                  }
+                  .game-col-2 { width: 25%; }
+                  .game-col-3 { width: 25%; }
                   
-                  {/* Opponent Profile Card (Visible on mobile only, above the board) */}
-                  <div className="mobile-profile" style={{ marginBottom: '12px' }}>
-                    {renderProfileCard('opponent')}
-                  </div>
+                  .chess-board-wrapper {
+                    width: 100%;
+                    max-width: calc(100vh - 280px);
+                    margin: 0 auto;
+                  }
+                }
+                
+                @media (max-width: 1023px) {
+                  .chess-board-wrapper {
+                    width: 100%;
+                    max-width: 550px;
+                    margin: 0 auto;
+                  }
+                }
+              `}
+            </style>
+            
+            <div className="game-layout">
+              {/* Column 1: Board + Profiles */}
+              <div className="game-col-1" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {renderProfileCard('opponent')}
+                
+                <div style={{ display: 'flex', flexDirection: 'row', gap: '10px', alignItems: 'stretch' }}>
+                  {/* Vertical Probability Status Bar */}
+                  {(() => {
+                    const currentChess = new Chess(gameFen);
+                    const isMate = currentChess.isCheckmate();
+                    let whiteProb = 50;
+                    let displayScore = "0.0";
 
-                  <div style={{ 
-                    width: '100%', 
-                    maxWidth: '550px',
-                    margin: '0 auto',
+                    if (isMate) {
+                      const winner = currentChess.turn() === 'w' ? 'black' : 'white';
+                      whiteProb = winner === 'white' ? 100 : 0;
+                      displayScore = winner === 'white' ? '+M' : '-M';
+                    } else if (engineEval) {
+                      if (engineEval.type === 'mate') {
+                        whiteProb = engineEval.value > 0 ? 100 : 0;
+                        displayScore = engineEval.value > 0 ? `+M${Math.abs(engineEval.value)}` : `-M${Math.abs(engineEval.value)}`;
+                      } else {
+                        const advantage = engineEval.value / 100;
+                        whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 4)));
+                        displayScore = advantage > 0 ? `+${advantage.toFixed(1)}` : advantage < 0 ? `${advantage.toFixed(1)}` : "0.0";
+                      }
+                    } else {
+                      const captured = getCapturedPieces(currentChess);
+                      const advantage = captured.white.points - captured.black.points;
+                      whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 4)));
+                      displayScore = advantage > 0 ? `+${advantage.toFixed(1)}` : advantage < 0 ? `${advantage.toFixed(1)}` : "0.0";
+                    }
+
+                    return (
+                      <div style={{
+                        width: '20px', // Slightly wider for text
+                        backgroundColor: '#5C6479', // Dark color for Black
+                        borderRadius: '4px',
+                        display: 'flex',
+                        flexDirection: selectedColor === 'black' ? 'column-reverse' : 'column',
+                        justifyContent: 'flex-start',
+                        overflow: 'hidden',
+                        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                      }}>
+                        {/* Black's portion */}
+                        <div style={{
+                          width: '100%',
+                          height: `${100 - whiteProb}%`,
+                          backgroundColor: '#5C6479',
+                          transition: 'height 0.5s ease-in-out',
+                          position: 'relative'
+                        }}>
+                          {whiteProb < 50 && (
+                            <div style={{
+                              position: 'absolute',
+                              bottom: selectedColor === 'black' ? 'auto' : '2px',
+                              top: selectedColor === 'black' ? '2px' : 'auto',
+                              width: '100%',
+                              textAlign: 'center',
+                              fontSize: '9px',
+                              fontWeight: '800',
+                              color: '#ECEFF4',
+                              letterSpacing: '-0.5px'
+                            }}>
+                              {displayScore}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* White's portion */}
+                        <div style={{
+                          width: '100%',
+                          height: `${whiteProb}%`,
+                          backgroundColor: '#ECEFF4', // Light color for White
+                          transition: 'height 0.5s ease-in-out',
+                          position: 'relative',
+                          boxShadow: selectedColor === 'black' ? '0 2px 4px rgba(0,0,0,0.1)' : '0 -2px 4px rgba(0,0,0,0.1)'
+                        }}>
+                          {whiteProb >= 50 && (
+                            <div style={{
+                              position: 'absolute',
+                              top: selectedColor === 'black' ? 'auto' : '2px',
+                              bottom: selectedColor === 'black' ? '2px' : 'auto',
+                              width: '100%',
+                              textAlign: 'center',
+                              fontSize: '9px',
+                              fontWeight: '800',
+                              color: '#5C6479',
+                              letterSpacing: '-0.5px'
+                            }}>
+                              {displayScore}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="chess-board-wrapper" style={{ 
                     backgroundColor: 'var(--ion-background-color)', 
-                    transition: 'background-color 0.3s ease' 
+                    transition: 'background-color 0.3s ease',
+                    flexGrow: 1
                   }}>
                     <Chessboard
-                      position={gameFen}
-                      onPieceDrop={onDrop}
-                      boardWidth={window.innerWidth > 600 ? 550 : window.innerWidth - 32}
-                      boardOrientation={selectedColor === 'black' ? 'black' : 'white'}
-                      customDarkSquareStyle={{ backgroundColor: '#5C6479' }}
-                      customLightSquareStyle={{ backgroundColor: '#ECEFF4' }}
-                      customBoardStyle={{ borderRadius: '0px', boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}
-                      arePiecesDraggable={!isEngineThinking && isClockRunning}
-                      customSquareStyles={{
-                        ...(lastMove && {
-                          [lastMove.from]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' },
-                          [lastMove.to]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' }
-                        })
-                      }}
-                    />
+                    position={gameFen}
+                    onPieceDrop={onDrop}
+                    boardOrientation={selectedColor === 'black' ? 'black' : 'white'}
+                    customDarkSquareStyle={{ backgroundColor: '#5C6479' }}
+                    customLightSquareStyle={{ backgroundColor: '#ECEFF4' }}
+                    customBoardStyle={{ borderRadius: '0px', boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}
+                    arePiecesDraggable={!isEngineThinking && isClockRunning}
+                    customSquareStyles={{
+                      ...(lastMove && {
+                        [lastMove.from]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' },
+                        [lastMove.to]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' }
+                      }),
+                      ...( (() => {
+                          const currentChess = new Chess(gameFen);
+                          if (currentChess.inCheck() || currentChess.isCheckmate()) {
+                            const board = currentChess.board();
+                            for (let i = 0; i < board.length; i++) {
+                              for (let j = 0; j < board[i].length; j++) {
+                                const piece = board[i][j];
+                                if (piece && piece.type === 'k' && piece.color === currentChess.turn()) {
+                                  const isCheckmate = currentChess.isCheckmate();
+                                  return {
+                                    [piece.square]: {
+                                      backgroundColor: isCheckmate ? 'rgba(229, 57, 53, 0.8)' : 'rgba(229, 57, 53, 0.4)',
+                                      boxShadow: isCheckmate ? 'inset 0 0 10px rgba(0,0,0,0.5)' : 'none'
+                                    }
+                                  };
+                                }
+                              }
+                            }
+                          }
+                          return {};
+                      })() )
+                    }}
+                  />
                   </div>
+                </div>
 
-                  {/* User Profile Card (Visible on mobile only, right below the board) */}
-                  <div className="mobile-profile" style={{ marginTop: '12px' }}>
-                    {renderProfileCard('user')}
-                  </div>
+                {renderProfileCard('user')}
+              </div>
 
-                </IonCol>
+              {/* Column 2: Controls */}
+              <div className="game-col-2" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Active Match Status Banner */}
+                <div style={{ 
+                  padding: '12px 16px', 
+                  borderRadius: '12px', 
+                  backgroundColor: 'var(--luxury-card-bg)', 
+                  fontSize: '13px', 
+                  fontWeight: '600', 
+                  textAlign: 'center', 
+                  borderLeft: '4px solid var(--luxury-gold)', 
+                  boxShadow: 'var(--luxury-card-shadow)', 
+                  transition: 'background-color 0.3s ease' 
+                }}>
+                  {gameStatus}
+                </div>
 
-                {/* Right: Side Panel Column */}
-                <IonCol size="12" sizeMd="5" sizeLg="4" style={{ padding: '8px' }}>
-                  <div className="right-panel-container">
-                    
-                    {/* TOP STACK */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexGrow: 1 }}>
-                      
-                      {/* 1. Opponent Profile Card (Desktop Only) */}
-                      <div className="desktop-profile">
-                        {renderProfileCard('opponent')}
-                      </div>
+                {/* History Review Toolbar */}
+                <IonGrid style={{ padding: 0 }}>
+                  <IonRow>
+                    <IonCol size="3">
+                      <IonButton expand="block" color="medium" fill="outline" onClick={goToFirst} disabled={moveIndex === 0 || isEngineThinking}>
+                        <IonIcon slot="icon-only" icon={playSkipBackOutline} />
+                      </IonButton>
+                    </IonCol>
+                    <IonCol size="3">
+                      <IonButton expand="block" color="medium" fill="outline" onClick={goToPrev} disabled={moveIndex === 0 || isEngineThinking}>
+                        <IonIcon slot="icon-only" icon={chevronBackOutline} />
+                      </IonButton>
+                    </IonCol>
+                    <IonCol size="3">
+                      <IonButton expand="block" color="medium" fill="outline" onClick={goToNext} disabled={moveIndex >= history.length || isEngineThinking}>
+                        <IonIcon slot="icon-only" icon={chevronForwardOutline} />
+                      </IonButton>
+                    </IonCol>
+                    <IonCol size="3">
+                      <IonButton expand="block" color="medium" fill="outline" onClick={goToLast} disabled={moveIndex >= history.length || isEngineThinking}>
+                        <IonIcon slot="icon-only" icon={playSkipForwardOutline} />
+                      </IonButton>
+                    </IonCol>
+                  </IonRow>
+                </IonGrid>
 
-                      {/* 2. Active Match Status Banner */}
-                      <div style={{ 
-                        padding: '12px 16px', 
-                        borderRadius: '12px', 
-                        backgroundColor: 'var(--luxury-card-bg)', 
-                        fontSize: '13px', 
-                        fontWeight: '600', 
-                        textAlign: 'center', 
-                        borderLeft: '4px solid var(--luxury-gold)', 
-                        boxShadow: 'var(--luxury-card-shadow)', 
-                        transition: 'background-color 0.3s ease' 
-                      }}>
-                        {gameStatus}
-                      </div>
+                {/* Primary Quick Actions */}
+                <IonGrid style={{ padding: 0 }}>
+                  <IonRow>
+                    <IonCol size="6">
+                      <IonButton expand="block" color="danger" fill="outline" onClick={handleResign} disabled={isEngineThinking}>
+                        <IonIcon slot="start" icon={closeOutline} />
+                        Resign
+                      </IonButton>
+                    </IonCol>
+                    <IonCol size="6">
+                      <IonButton expand="block" color="primary" fill="outline" onClick={startNewGame} disabled={isEngineThinking}>
+                        <IonIcon slot="start" icon={refreshOutline} />
+                        Restart
+                      </IonButton>
+                    </IonCol>
+                  </IonRow>
+                </IonGrid>
 
-                      {/* 3. Moves Played Log (PGN Format) */}
-                      <div style={{ 
-                        backgroundColor: 'var(--luxury-card-bg)', 
-                        borderRadius: '16px', 
-                        padding: '16px', 
-                        border: '1px solid var(--luxury-border)', 
-                        boxShadow: 'var(--luxury-card-shadow)', 
-                        transition: 'background-color 0.3s ease', 
-                        flexGrow: 1, 
-                        minHeight: '120px',
-                        display: 'flex',
-                        flexDirection: 'column'
-                      }}>
-                        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Moves Played</h3>
-                        {history.length === 0 ? (
-                          <p style={{ color: 'var(--luxury-text-muted)', margin: 0, fontSize: '13px', fontWeight: '300', flexGrow: 1 }}>Waiting for first move...</p>
-                        ) : (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto', flexGrow: 1 }}>
-                            {history.map((move, index) => (
-                              <span key={index} style={{ padding: '3px 7px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px', color: 'var(--ion-text-color)', transition: 'background-color 0.3s ease, color 0.3s ease' }}>
-                                {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
+                {/* Moves Played Log */}
+                <div style={{ 
+                  backgroundColor: 'var(--luxury-card-bg)', 
+                  borderRadius: '16px', 
+                  padding: '16px', 
+                  border: '1px solid var(--luxury-border)', 
+                  boxShadow: 'var(--luxury-card-shadow)', 
+                  transition: 'background-color 0.3s ease', 
+                  flexGrow: 1, 
+                  minHeight: '120px',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Moves Played</h3>
+                  {history.length === 0 ? (
+                    <p style={{ color: 'var(--luxury-text-muted)', margin: 0, fontSize: '13px', fontWeight: '300', flexGrow: 1 }}>Waiting for first move...</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto', flexGrow: 1 }}>
+                      {history.map((move, index) => (
+                        <span key={index} style={{ padding: '3px 7px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px', color: 'var(--ion-text-color)', transition: 'background-color 0.3s ease, color 0.3s ease' }}>
+                          {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
+                        </span>
+                      ))}
                     </div>
+                  )}
+                </div>
+              </div>
 
-                    {/* BOTTOM STACK */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      
-                      {/* 4. History Review Toolbar (The newly corrected ⏮ ◀ ▶ ⏭ layout row) */}
-                      <IonGrid style={{ padding: 0 }}>
-                        <IonRow>
-                          <IonCol size="3">
-                            <IonButton expand="block" color="medium" fill="outline" onClick={goToFirst} disabled={moveIndex === 0 || isEngineThinking}>
-                              <IonIcon slot="icon-only" icon={playSkipBackOutline} />
-                            </IonButton>
-                          </IonCol>
-                          <IonCol size="3">
-                            <IonButton expand="block" color="medium" fill="outline" onClick={goToPrev} disabled={moveIndex === 0 || isEngineThinking}>
-                              <IonIcon slot="icon-only" icon={chevronBackOutline} />
-                            </IonButton>
-                          </IonCol>
-                          <IonCol size="3">
-                            <IonButton expand="block" color="medium" fill="outline" onClick={goToNext} disabled={moveIndex >= history.length || isEngineThinking}>
-                              <IonIcon slot="icon-only" icon={chevronForwardOutline} />
-                            </IonButton>
-                          </IonCol>
-                          <IonCol size="3">
-                            <IonButton expand="block" color="medium" fill="outline" onClick={goToLast} disabled={moveIndex >= history.length || isEngineThinking}>
-                              <IonIcon slot="icon-only" icon={playSkipForwardOutline} />
-                            </IonButton>
-                          </IonCol>
-                        </IonRow>
-                      </IonGrid>
-
-                      {/* 5. Primary Quick Actions (Resign / Restart side-by-side as clean, equal-width blocks) */}
-                      <IonGrid style={{ padding: 0 }}>
-                        <IonRow>
-                          <IonCol size="6">
-                            <IonButton expand="block" color="danger" fill="outline" onClick={handleResign} disabled={isEngineThinking}>
-                              <IonIcon slot="start" icon={closeOutline} />
-                              Resign
-                            </IonButton>
-                          </IonCol>
-                          <IonCol size="6">
-                            <IonButton expand="block" color="primary" fill="outline" onClick={startNewGame} disabled={isEngineThinking}>
-                              <IonIcon slot="start" icon={refreshOutline} />
-                              Restart
-                            </IonButton>
-                          </IonCol>
-                        </IonRow>
-                      </IonGrid>
-
-                      {/* 6. Your User Profile Card (Desktop Only) */}
-                      <div className="desktop-profile">
-                        {renderProfileCard('user')}
-                      </div>
-
-                    </div>
-
-                  </div>
-                </IonCol>
-              </IonRow>
-            </IonGrid>
-
+              {/* Column 3: Ad Banner Placeholder */}
+              <div className="game-col-3" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{
+                  backgroundColor: 'var(--luxury-card-bg)',
+                  borderRadius: '16px',
+                  border: '1px dashed var(--luxury-border)',
+                  padding: '24px',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  minHeight: '200px',
+                  boxShadow: 'var(--luxury-card-shadow)'
+                }}>
+                  <span style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Advertisement</span>
+                  <div style={{ fontSize: '18px', color: 'var(--luxury-gold)', fontWeight: '800', marginBottom: '4px' }}>Grandmaster Elite</div>
+                  <p style={{ fontSize: '12px', color: 'var(--ion-text-color)', opacity: 0.7, margin: 0 }}>Unlock advanced AI analysis and unlimited puzzles.</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

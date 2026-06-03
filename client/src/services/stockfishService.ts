@@ -6,6 +6,7 @@ const STOCKFISH_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.
 export class StockfishEngine {
   private worker: Worker | null = null;
   private onMoveCallback: ((move: string) => void) | null = null;
+  private onEvalCallback: ((evaluation: { type: 'cp' | 'mate', value: number }) => void) | null = null;
 
   constructor() {
     this.initWorker();
@@ -22,8 +23,20 @@ export class StockfishEngine {
       
       this.worker.onmessage = (event: MessageEvent) => {
         const line = event.data;
-        console.log(`🤖 Engine Output: ${line}`);
+        // console.log(`🤖 Engine Output: ${line}`); // Uncomment for debugging
         
+        if (line.startsWith('info') && line.includes('score')) {
+          const parts = line.split(' ');
+          const scoreIndex = parts.indexOf('score');
+          if (scoreIndex !== -1 && scoreIndex + 2 < parts.length) {
+            const type = parts[scoreIndex + 1];
+            const value = parseInt(parts[scoreIndex + 2], 10);
+            if ((type === 'cp' || type === 'mate') && this.onEvalCallback) {
+              this.onEvalCallback({ type: type as 'cp' | 'mate', value });
+            }
+          }
+        }
+
         if (line.startsWith('bestmove')) {
           const parts = line.split(' ');
           const bestMove = parts[1]; // e.g. "e2e4"
@@ -50,6 +63,13 @@ export class StockfishEngine {
   // Get best move for a given position
   public getBestMove(fen: string, depth: number, onMove: (move: string) => void) {
     this.onMoveCallback = onMove;
+    this.sendUCI(`position fen ${fen}`);
+    this.sendUCI(`go depth ${depth}`);
+  }
+
+  // Continuous evaluation of a position
+  public evaluatePosition(fen: string, depth: number, onEval: (evalData: { type: 'cp' | 'mate', value: number }) => void) {
+    this.onEvalCallback = onEval;
     this.sendUCI(`position fen ${fen}`);
     this.sendUCI(`go depth ${depth}`);
   }
