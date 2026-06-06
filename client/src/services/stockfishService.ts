@@ -1,7 +1,5 @@
 // Stockfish engine service utilizing Web Workers
-// Supported either locally from assets or via a CDN blob fallback to support offline packaging.
-
-const STOCKFISH_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+// Migrated to Stockfish 17 Lite (WebAssembly)
 
 export class StockfishEngine {
   private worker: Worker | null = null;
@@ -14,12 +12,8 @@ export class StockfishEngine {
 
   private initWorker() {
     try {
-      // Create Web Worker from CDN URL wrapped in Blob to bypass CORS
-      const blobCode = `importScripts('${STOCKFISH_CDN}');`;
-      const blob = new Blob([blobCode], { type: 'application/javascript' });
-      const workerUrl = URL.createObjectURL(blob);
-      
-      this.worker = new Worker(workerUrl);
+      // Use the local Stockfish 17 Lite WebAssembly engine
+      this.worker = new Worker('/engines/stockfish-17-lite-single.js');
       
       this.worker.onmessage = (event: MessageEvent) => {
         const line = event.data;
@@ -39,8 +33,8 @@ export class StockfishEngine {
 
         if (line.startsWith('bestmove')) {
           const parts = line.split(' ');
-          const bestMove = parts[1]; // e.g. "e2e4"
-          if (this.onMoveCallback && bestMove !== '(none)') {
+          const bestMove = parts[1]; // e.g. "e2e4" or "(none)"
+          if (this.onMoveCallback) {
             this.onMoveCallback(bestMove);
           }
         }
@@ -72,6 +66,27 @@ export class StockfishEngine {
     this.onEvalCallback = onEval;
     this.sendUCI(`position fen ${fen}`);
     this.sendUCI(`go depth ${depth}`);
+  }
+
+  // Promisified single-shot analysis: resolves with final score when bestmove arrives
+  public analyzePosition(fen: string, depth: number): Promise<{ type: 'cp' | 'mate'; value: number; bestMove: string }> {
+    return new Promise((resolve) => {
+      let lastEval: { type: 'cp' | 'mate'; value: number } = { type: 'cp', value: 0 };
+
+      const prevOnEval = this.onEvalCallback;
+      const prevOnMove = this.onMoveCallback;
+
+      this.onEvalCallback = (ev) => { lastEval = ev; };
+      this.onMoveCallback = (bestMove) => {
+        // Restore previous callbacks and resolve
+        this.onEvalCallback = prevOnEval;
+        this.onMoveCallback = prevOnMove;
+        resolve({ ...lastEval, bestMove });
+      };
+
+      this.sendUCI(`position fen ${fen}`);
+      this.sendUCI(`go depth ${depth}`);
+    });
   }
 
   // Stop current calculation

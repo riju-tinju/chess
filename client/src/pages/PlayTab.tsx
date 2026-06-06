@@ -50,7 +50,9 @@ import {
   flashOutline,
   sunnyOutline,
   moonOutline,
-  closeOutline
+  closeOutline,
+  expandOutline,
+  contractOutline
 } from 'ionicons/icons';
 import { StockfishEngine } from '../services/stockfishService';
 import { useUserStore } from '../store/useUserStore';
@@ -83,6 +85,7 @@ const PlayTab: React.FC = () => {
 
   // Dual Themes State: Premium Light Mode as Default core experience
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
 
   // View state machine
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
@@ -91,6 +94,7 @@ const PlayTab: React.FC = () => {
   const chessRef = useRef(new Chess());
   const engineRef = useRef<StockfishEngine | null>(null);
   const evalEngineRef = useRef<StockfishEngine | null>(null);
+  const analyzeEngineRef = useRef<StockfishEngine | null>(null);
   const [engineEval, setEngineEval] = useState<{ type: 'cp' | 'mate', value: number } | null>(null);
   
   const [gameMode, setGameMode] = useState<GameMode>('computer');
@@ -135,6 +139,17 @@ const PlayTab: React.FC = () => {
   const [isLobbyConnecting, setIsLobbyConnecting] = useState<boolean>(false);
 
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [isReviewMode, setIsReviewMode] = useState<boolean>(false);
+  const [reviewTab, setReviewTab] = useState<'report' | 'analysis'>('report');
+  const [aiCoachEnabled, setAiCoachEnabled] = useState<boolean>(false);
+  const [isMicRecording, setIsMicRecording] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [analysisProgress, setAnalysisProgress] = useState<number>(0);
+  type MoveClassification = 'brilliant' | 'critical' | 'best' | 'excellent' | 'okay' | 'inaccuracy' | 'mistake' | 'miss' | 'blunder' | 'theory' | 'none';
+  interface MoveAnalysis { classification: MoveClassification; cpLoss: number; eval: number; bestMoveUCI?: string; }
+  interface AnalysisReport { moveAnalyses: MoveAnalysis[]; evals: number[]; whiteAccuracy: number; blackAccuracy: number; }
+  const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
 
   const playSound = (type: 'move' | 'capture' | 'check' | 'castle' | 'gameover') => {
     try {
@@ -241,6 +256,113 @@ const PlayTab: React.FC = () => {
       playSound('gameover');
     }
   };
+
+  const runGameAnalysis = async () => {
+    if (!analyzeEngineRef.current || history.length === 0) return;
+    setIsAnalyzing(true);
+    setAnalysisProgress(0);
+
+    const tempChess = new Chess();
+    const evals: number[] = [];
+    const moveAnalyses: MoveAnalysis[] = [];
+    
+    // Evaluate the starting position once
+    const initialEvalData = await analyzeEngineRef.current.analyzePosition(tempChess.fen(), 16);
+    let prevScore = initialEvalData.type === 'mate' 
+       ? (initialEvalData.value === 0 ? -10000 : Math.sign(initialEvalData.value) * 10000) 
+       : initialEvalData.value;
+    let prevBestMove = initialEvalData.bestMove;
+
+    for (let i = 0; i < history.length; i++) {
+      // Make the move
+      tempChess.move(history[i]);
+
+      // Analyze the position AFTER the move
+      const fenAfter = tempChess.fen();
+      let scoreAfter = 0;
+      let bestMoveAfter = '';
+      
+      if (tempChess.isCheckmate()) {
+        scoreAfter = -10000; // The side to move (fenAfter) is mated
+      } else if (tempChess.isDraw() || tempChess.isStalemate() || tempChess.isThreefoldRepetition() || tempChess.isInsufficientMaterial()) {
+        scoreAfter = 0; // Draw
+      } else {
+        const evalAfter = await analyzeEngineRef.current.analyzePosition(fenAfter, 16);
+        scoreAfter = evalAfter.type === 'mate' 
+           ? (evalAfter.value === 0 ? -10000 : Math.sign(evalAfter.value) * 10000) 
+           : evalAfter.value;
+        bestMoveAfter = evalAfter.bestMove;
+      }
+
+      // Ensure evaluations are from White's perspective
+      const whiteEvalBefore = i % 2 === 0 ? prevScore : -prevScore;
+      const whiteEvalAfter = tempChess.turn() === 'w' ? scoreAfter : -scoreAfter;
+      evals.push(whiteEvalAfter);
+
+      // Calculate CP loss for the player who just moved
+      // Win Probability formula identical to dummyProject's getExpectedPoints
+      const winProb = (cp: number) => 50 + 50 * (2 / (1 + Math.exp(-0.0035 * Math.max(-2000, Math.min(2000, cp)))) - 1);
+      
+      let pBefore = winProb(i % 2 === 0 ? whiteEvalBefore : -whiteEvalBefore); // Win prob for player who moved
+      let pAfter = winProb(i % 2 === 0 ? whiteEvalAfter : -whiteEvalAfter); 
+      
+      let loss = Math.max(0, pBefore - pAfter);
+
+      let classification: MoveClassification = 'okay'; // Default fallback
+      
+      // Strict point loss thresholds aligned exactly with dummyProject (multiplied by 100 for percentage)
+      if (loss < 1.0) classification = 'best'; // BEST (dummy < 0.01)
+      else if (loss < 4.5) classification = 'excellent'; // EXCELLENT (dummy < 0.045)
+      else if (loss < 8.0) classification = 'okay'; // OKAY (dummy < 0.08)
+      else if (loss < 12.0) classification = 'inaccuracy'; // INACCURACY (dummy < 0.12)
+      else if (loss < 22.0) classification = 'mistake'; // MISTAKE (dummy < 0.22)
+      else classification = 'blunder'; // BLUNDER (dummy >= 0.22)
+
+      // Specific exceptions
+      if (i < 4 && loss < 2.0) classification = 'theory'; // Opening book
+      else if (loss >= 12.0 && Math.abs(whiteEvalBefore) > 150 && Math.abs(whiteEvalAfter) < 50) {
+        classification = 'miss'; // Missed a big advantage
+      } else if (loss < 1.0 && Math.abs(whiteEvalBefore) < 200 && Math.abs(whiteEvalAfter) > 200) {
+        classification = 'brilliant';
+      } else if (loss < 1.0 && Math.abs(whiteEvalBefore) > 100 && Math.abs(whiteEvalAfter) > 100 && Math.sign(whiteEvalBefore) !== Math.sign(whiteEvalAfter)) {
+        classification = 'critical'; // Sharp turnaround move
+      }
+
+      moveAnalyses.push({ classification, cpLoss: loss, eval: whiteEvalAfter, bestMoveUCI: prevBestMove });
+
+      // Cache for next iteration (prevScore is always relative to the player to move next)
+      prevScore = scoreAfter;
+      prevBestMove = bestMoveAfter;
+      
+      // Update progress
+      setAnalysisProgress(Math.round(((i + 1) / history.length) * 100));
+    }
+
+    // Calculate overall accuracy
+    let whiteAcc = 0;
+    let blackAcc = 0;
+    let whiteMoves = 0;
+    let blackMoves = 0;
+
+    moveAnalyses.forEach((ma, i) => {
+       // Convert probability loss to an accuracy percentage
+       const acc = Math.max(0, 100 - ma.cpLoss * 2);
+       if (i % 2 === 0) { whiteAcc += acc; whiteMoves++; }
+       else { blackAcc += acc; blackMoves++; }
+    });
+
+    setAnalysisReport({
+      moveAnalyses,
+      evals,
+      whiteAccuracy: whiteMoves ? whiteAcc / whiteMoves : 0,
+      blackAccuracy: blackMoves ? blackAcc / blackMoves : 0
+    });
+
+    setIsAnalyzing(false);
+    setIsReviewMode(true);
+    setReviewTab('report');
+  };
+
   // Move navigation state
   const [moveIndex, setMoveIndex] = useState<number>(history.length);
 
@@ -294,9 +416,11 @@ const PlayTab: React.FC = () => {
   useEffect(() => {
     engineRef.current = new StockfishEngine();
     evalEngineRef.current = new StockfishEngine();
+    analyzeEngineRef.current = new StockfishEngine();
     return () => {
       engineRef.current?.terminate();
       evalEngineRef.current?.terminate();
+      analyzeEngineRef.current?.terminate();
     };
   }, []);
 
@@ -477,6 +601,35 @@ const PlayTab: React.FC = () => {
       return true;
     } catch (error) {
       return false;
+    }
+  };
+
+  const onSquareClick = (square: string) => {
+    if (isEngineThinking || !isClockRunning) return;
+    const currentChess = chessRef.current;
+    const piece = currentChess.get(square as any);
+    const turn = currentChess.turn();
+    
+    if (gameMode === 'computer') {
+      const engineSide = selectedColor === 'white' ? 'b' : 'w';
+      if (turn === engineSide) return;
+    } else {
+      if (turn !== (selectedColor === 'black' ? 'b' : 'w')) return;
+    }
+
+    if (selectedSquare === null) {
+      if (piece && piece.color === turn) {
+        setSelectedSquare(square);
+      }
+    } else {
+      if (selectedSquare === square) {
+        setSelectedSquare(null);
+      } else if (piece && piece.color === turn) {
+        setSelectedSquare(square);
+      } else {
+        onDrop(selectedSquare, square);
+        setSelectedSquare(null);
+      }
     }
   };
 
@@ -760,21 +913,44 @@ const PlayTab: React.FC = () => {
             </div>
           )}
           
-          {/* Dual Theme Switcher (Tucked into top-right header) */}
-          <div slot="end" onClick={() => setIsDarkMode(!isDarkMode)} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '10px',
-            fontWeight: '700',
-            letterSpacing: '1px',
-            cursor: 'pointer',
-            paddingRight: '0',
-            color: 'var(--luxury-gold)',
-            textTransform: 'uppercase'
-          }}>
-            <IonIcon icon={isDarkMode ? sunnyOutline : moonOutline} style={{ fontSize: '14px' }} />
-            <span>{isDarkMode ? 'LIGHT' : 'DARK'}</span>
+          {/* Dual Theme Switcher & Focus Mode (Tucked into top-right header) */}
+          <div slot="end" style={{ display: 'flex', alignItems: 'center', gap: '16px', paddingRight: '0' }}>
+            {/* Focus Mode (Desktop only, Board view only) */}
+            {activeView === 'board' && (
+              <div 
+                className="desktop-only-flex"
+                onClick={() => setIsFocusMode(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  letterSpacing: '1px',
+                  cursor: 'pointer',
+                  color: 'var(--luxury-gold)',
+                  textTransform: 'uppercase'
+                }}
+              >
+                <IonIcon icon={expandOutline} style={{ fontSize: '14px' }} />
+                <span>FOCUS</span>
+              </div>
+            )}
+            
+            <div onClick={() => setIsDarkMode(!isDarkMode)} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '10px',
+              fontWeight: '700',
+              letterSpacing: '1px',
+              cursor: 'pointer',
+              color: 'var(--luxury-gold)',
+              textTransform: 'uppercase'
+            }}>
+              <IonIcon icon={isDarkMode ? sunnyOutline : moonOutline} style={{ fontSize: '14px' }} />
+              <span>{isDarkMode ? 'LIGHT' : 'DARK'}</span>
+            </div>
           </div>
         </IonToolbar>
       </IonHeader>
@@ -1682,6 +1858,48 @@ const PlayTab: React.FC = () => {
         {/* ========================================================= */}
         {activeView === 'board' && (
           <div style={{ color: 'var(--ion-text-color)', padding: '16px 8px' }}>
+            {isFocusMode && (
+              <style>
+                {`
+                  ion-header { display: none !important; }
+                  ion-tab-bar { display: none !important; }
+                  @media (min-width: 1024px) {
+                    .game-col-1 { max-height: 100vh !important; }
+                    .chess-board-wrapper { max-width: calc(100vh - 160px) !important; }
+                  }
+                `}
+              </style>
+            )}
+            
+            {isFocusMode && (
+              <div 
+                className="desktop-only-flex"
+                onClick={() => setIsFocusMode(false)}
+                style={{
+                  position: 'fixed',
+                  top: '16px',
+                  right: '16px',
+                  zIndex: 9999,
+                  backgroundColor: 'var(--luxury-card-bg)',
+                  padding: '10px 16px',
+                  borderRadius: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  letterSpacing: '1.5px',
+                  cursor: 'pointer',
+                  color: 'var(--luxury-gold)',
+                  boxShadow: 'var(--luxury-card-shadow)',
+                  border: '1px solid var(--luxury-border)'
+                }}
+              >
+                <IonIcon icon={contractOutline} style={{ fontSize: '16px' }} />
+                <span>EXIT FOCUS</span>
+              </div>
+            )}
+            
             <style>
               {`
                 .game-layout {
@@ -1710,6 +1928,9 @@ const PlayTab: React.FC = () => {
                 }
                 
                 @media (max-width: 1023px) {
+                  .desktop-only-flex {
+                    display: none !important;
+                  }
                   .chess-board-wrapper {
                     width: 100%;
                     max-width: 550px;
@@ -1746,21 +1967,21 @@ const PlayTab: React.FC = () => {
                     if (isMate) {
                       const winner = currentChess.turn() === 'w' ? 'black' : 'white';
                       whiteProb = winner === 'white' ? 100 : 0;
-                      displayScore = winner === 'white' ? '+M' : '-M';
+                      displayScore = 'M';
                     } else if (engineEval) {
                       if (engineEval.type === 'mate') {
                         whiteProb = engineEval.value > 0 ? 100 : 0;
-                        displayScore = engineEval.value > 0 ? `+M${Math.abs(engineEval.value)}` : `-M${Math.abs(engineEval.value)}`;
+                        displayScore = `M${Math.abs(engineEval.value)}`;
                       } else {
                         const advantage = engineEval.value / 100;
-                        whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 4)));
-                        displayScore = advantage > 0 ? `+${advantage.toFixed(1)}` : advantage < 0 ? `${advantage.toFixed(1)}` : "0.0";
+                        whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 5)));
+                        displayScore = Math.abs(advantage).toFixed(1);
                       }
                     } else {
                       const captured = getCapturedPieces(currentChess);
                       const advantage = captured.white.points - captured.black.points;
-                      whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 4)));
-                      displayScore = advantage > 0 ? `+${advantage.toFixed(1)}` : advantage < 0 ? `${advantage.toFixed(1)}` : "0.0";
+                      whiteProb = Math.max(5, Math.min(95, 50 + (advantage * 5)));
+                      displayScore = Math.abs(advantage).toFixed(1);
                     }
 
                     return (
@@ -1837,6 +2058,7 @@ const PlayTab: React.FC = () => {
                     <Chessboard
                     position={gameFen}
                     onPieceDrop={onDrop}
+                    onSquareClick={onSquareClick}
                     boardOrientation={selectedColor === 'black' ? 'black' : 'white'}
                     customDarkSquareStyle={{ backgroundColor: '#5C6479' }}
                     customLightSquareStyle={{ backgroundColor: '#ECEFF4' }}
@@ -1847,6 +2069,9 @@ const PlayTab: React.FC = () => {
                         [lastMove.from]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' },
                         [lastMove.to]: { backgroundColor: 'rgba(199, 168, 76, 0.2)' }
                       }),
+                      ...(selectedSquare && {
+                        [selectedSquare]: { backgroundColor: 'rgba(199, 168, 76, 0.4)', border: '2px solid var(--luxury-gold)' }
+                      }),
                       ...( (() => {
                           const currentChess = new Chess(gameFen);
                           const board = currentChess.board();
@@ -1854,7 +2079,8 @@ const PlayTab: React.FC = () => {
                           
                           const isAtLatestMove = moveIndex === history.length;
                           const isCheckmate = currentChess.isCheckmate();
-                          const isDraw = currentChess.isDraw();
+                          const isGameStatusDraw = gameStatus.toLowerCase().includes('draw') || gameStatus.toLowerCase().includes('stalemate');
+                          const isDraw = currentChess.isDraw() || isGameStatusDraw;
                           const isTimeout = gameStatus.includes('wins on time');
                           const isResign = gameStatus.includes('resigned');
                           const inCheck = currentChess.inCheck();
@@ -1946,10 +2172,82 @@ const PlayTab: React.FC = () => {
                               }
                             }
                           }
+
+                          // IN REVIEW MODE: Add Classification Badge to the destination square of the current reviewed move
+                          if (isReviewMode && moveIndex > 0 && analysisReport) {
+                            // Replay to get the actual from/to of the reviewed move
+                            const replayChess = new Chess();
+                            let reviewedMove: any = null;
+                            for (let mi = 0; mi < moveIndex && mi < history.length; mi++) {
+                              reviewedMove = replayChess.move(history[mi]);
+                            }
+                            
+                            if (reviewedMove) {
+                              const ma = analysisReport.moveAnalyses[moveIndex - 1];
+                              if (ma && ma.classification !== 'none') {
+                                const meta: any = {
+                                  brilliant:  { color: '#1baaa6', symbol: '!!' },
+                                  critical:   { color: '#5b8baf', symbol: '!' },
+                                  best:       { color: '#98bc49', symbol: '*' },
+                                  excellent:  { color: '#98bc49', symbol: '!' },
+                                  okay:       { color: '#97af8b', symbol: 'ok' },
+                                  inaccuracy: { color: '#f4bf44', symbol: '?!' },
+                                  mistake:    { color: '#e28c28', symbol: '?' },
+                                  miss:       { color: '#ff7769', symbol: 'x' },
+                                  blunder:    { color: '#c93230', symbol: '??' },
+                                  theory:     { color: '#a88764', symbol: 'T' },
+                                  none:       { color: 'transparent', symbol: '' }
+                                };
+                                const cl = meta[ma.classification];
+                                if (cl && cl.symbol) {
+                                  const moveToSquare = reviewedMove.to;
+                                  const svgBadge = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="${cl.color}" stroke="#FFF" stroke-width="2"/><text x="14" y="19" font-size="12" font-family="Arial,sans-serif" font-weight="900" fill="#FFF" text-anchor="middle">${cl.symbol}</text></svg>`;
+                                  
+                                  const existingBg = styles[moveToSquare] ? styles[moveToSquare].backgroundImage : undefined;
+                                  const newBg = `url("data:image/svg+xml,${encodeURIComponent(svgBadge)}")`;
+
+                                  styles[moveToSquare] = {
+                                    ...styles[moveToSquare],
+                                    backgroundImage: existingBg ? `${newBg}, ${existingBg}` : newBg,
+                                    backgroundRepeat: existingBg ? 'no-repeat, no-repeat' : 'no-repeat',
+                                    backgroundPosition: existingBg ? 'top -2px right -2px, top 4px right 4px' : 'top -2px right -2px',
+                                    backgroundSize: existingBg ? '40%, 32%' : '40%',
+                                    zIndex: 100
+                                  };
+                                }
+                              }
+
+                              // Also highlight the from/to squares of the reviewed move
+                              styles[reviewedMove.from] = {
+                                ...styles[reviewedMove.from],
+                                backgroundColor: 'rgba(199, 168, 76, 0.25)'
+                              };
+                              styles[reviewedMove.to] = {
+                                ...styles[reviewedMove.to],
+                                backgroundColor: 'rgba(199, 168, 76, 0.25)'
+                              };
+                            }
+                          }
                           
                           return styles;
                       })() )
                     }}
+                    customArrows={(() => {
+                      const arrows: any[] = [];
+                      if (isReviewMode && moveIndex > 0 && analysisReport) {
+                        const ma = analysisReport.moveAnalyses[moveIndex - 1];
+                        // Show best move arrow for everything except brilliant/critical/theory (those are already the best)
+                        const skipArrowFor = ['brilliant', 'critical', 'theory'];
+                        if (ma && ma.bestMoveUCI && ma.bestMoveUCI !== '(none)' && ma.bestMoveUCI.length >= 4 && !skipArrowFor.includes(ma.classification)) {
+                          const from = ma.bestMoveUCI.substring(0, 2);
+                          const to = ma.bestMoveUCI.substring(2, 4);
+                          const isGoodMove = ['best', 'excellent', 'okay'].includes(ma.classification);
+                          const arrowColor = isGoodMove ? 'rgba(152, 188, 73, 0.65)' : 'rgba(27, 170, 166, 0.75)';
+                          arrows.push([from, to, arrowColor]);
+                        }
+                      }
+                      return arrows;
+                    })()}
                   />
                   </div>
                 </div>
@@ -1957,93 +2255,315 @@ const PlayTab: React.FC = () => {
                 {renderProfileCard('user')}
               </div>
 
-              {/* Column 2: Controls */}
+              {/* Column 2: State Machine (Controls & Analytics) */}
               <div className="game-col-2" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Active Match Status Banner */}
-                <div style={{ 
-                  padding: '12px 16px', 
-                  borderRadius: '12px', 
-                  backgroundColor: 'var(--luxury-card-bg)', 
-                  fontSize: '13px', 
-                  fontWeight: '600', 
-                  textAlign: 'center', 
-                  borderLeft: '4px solid var(--luxury-gold)', 
-                  boxShadow: 'var(--luxury-card-shadow)', 
-                  transition: 'background-color 0.3s ease' 
-                }}>
-                  {gameStatus}
-                </div>
-
-                {/* History Review Toolbar */}
-                <IonGrid style={{ padding: 0 }}>
-                  <IonRow>
-                    <IonCol size="3">
-                      <IonButton expand="block" color="medium" fill="outline" onClick={goToFirst} disabled={moveIndex === 0 || isEngineThinking}>
-                        <IonIcon slot="icon-only" icon={playSkipBackOutline} />
-                      </IonButton>
-                    </IonCol>
-                    <IonCol size="3">
-                      <IonButton expand="block" color="medium" fill="outline" onClick={goToPrev} disabled={moveIndex === 0 || isEngineThinking}>
-                        <IonIcon slot="icon-only" icon={chevronBackOutline} />
-                      </IonButton>
-                    </IonCol>
-                    <IonCol size="3">
-                      <IonButton expand="block" color="medium" fill="outline" onClick={goToNext} disabled={moveIndex >= history.length || isEngineThinking}>
-                        <IonIcon slot="icon-only" icon={chevronForwardOutline} />
-                      </IonButton>
-                    </IonCol>
-                    <IonCol size="3">
-                      <IonButton expand="block" color="medium" fill="outline" onClick={goToLast} disabled={moveIndex >= history.length || isEngineThinking}>
-                        <IonIcon slot="icon-only" icon={playSkipForwardOutline} />
-                      </IonButton>
-                    </IonCol>
-                  </IonRow>
-                </IonGrid>
-
-                {/* Primary Quick Actions */}
-                <IonGrid style={{ padding: 0 }}>
-                  <IonRow>
-                    <IonCol size="6">
-                      <IonButton expand="block" color="danger" fill="outline" onClick={handleResign} disabled={isEngineThinking}>
-                        <IonIcon slot="start" icon={closeOutline} />
-                        Resign
-                      </IonButton>
-                    </IonCol>
-                    <IonCol size="6">
-                      <IonButton expand="block" color="primary" fill="outline" onClick={startNewGame} disabled={isEngineThinking}>
-                        <IonIcon slot="start" icon={refreshOutline} />
-                        Restart
-                      </IonButton>
-                    </IonCol>
-                  </IonRow>
-                </IonGrid>
-
-                {/* Moves Played Log */}
-                <div style={{ 
-                  backgroundColor: 'var(--luxury-card-bg)', 
-                  borderRadius: '16px', 
-                  padding: '16px', 
-                  border: '1px solid var(--luxury-border)', 
-                  boxShadow: 'var(--luxury-card-shadow)', 
-                  transition: 'background-color 0.3s ease', 
-                  flexGrow: 1, 
-                  minHeight: '120px',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}>
-                  <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: 'var(--luxury-gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Moves Played</h3>
-                  {history.length === 0 ? (
-                    <p style={{ color: 'var(--luxury-text-muted)', margin: 0, fontSize: '13px', fontWeight: '300', flexGrow: 1 }}>Waiting for first move...</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto', flexGrow: 1 }}>
-                      {history.map((move, index) => (
-                        <span key={index} style={{ padding: '3px 7px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px', color: 'var(--ion-text-color)', transition: 'background-color 0.3s ease, color 0.3s ease' }}>
-                          {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
-                        </span>
-                      ))}
+                
+                {/* STATE 3: GAME REVIEW & ANALYTICS */}
+                {isReviewMode ? (
+                  <>
+                    {/* Tab Navigation for Review Section */}
+                    <div style={{ display: 'flex', backgroundColor: 'var(--luxury-card-bg)', borderRadius: '12px', padding: '4px', border: '1px solid var(--luxury-border)' }}>
+                      <div 
+                        onClick={() => setReviewTab('report')}
+                        style={{ flex: 1, textAlign: 'center', padding: '8px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', cursor: 'pointer', backgroundColor: reviewTab === 'report' ? 'var(--luxury-gold)' : 'transparent', color: reviewTab === 'report' ? 'var(--ion-background-color)' : 'var(--luxury-text-muted)', transition: 'all 0.3s' }}
+                      >
+                        Report
+                      </div>
+                      <div 
+                        onClick={() => setReviewTab('analysis')}
+                        style={{ flex: 1, textAlign: 'center', padding: '8px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', cursor: 'pointer', backgroundColor: reviewTab === 'analysis' ? 'var(--luxury-gold)' : 'transparent', color: reviewTab === 'analysis' ? 'var(--ion-background-color)' : 'var(--luxury-text-muted)', transition: 'all 0.3s' }}
+                      >
+                        Analysis
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    {reviewTab === 'report' ? (() => {
+                      if (!analysisReport) return <div>No data</div>;
+                      
+                      const evalData = analysisReport.evals.map(e => e / 100); // cp to pawn units
+                      
+                      const graphW = 240;
+                      const graphH = 80;
+                      const midY = graphH / 2;
+                      const scaleY = (val: number) => Math.max(0, Math.min(graphH, midY - (val / 5) * midY));
+
+                      // Build SVG polyline points for white advantage (above midline) and black (below)
+                      const points = evalData.map((val, i) => {
+                        const x = evalData.length > 1 ? (i / (evalData.length - 1)) * graphW : 0;
+                        return `${x},${scaleY(val)}`;
+                      }).join(' ');
+
+                      // Build filled area path
+                      const firstX = 0;
+                      const lastX = evalData.length > 1 ? graphW : 0;
+                      const areaPath = evalData.length > 0
+                        ? `M${firstX},${midY} ` + evalData.map((val, i) => {
+                            const x = evalData.length > 1 ? (i / (evalData.length - 1)) * graphW : 0;
+                            return `L${x},${scaleY(val)}`;
+                          }).join(' ') + ` L${lastX},${midY} Z`
+                        : '';
+
+                      const classifs = [
+                        { label: 'Brilliant', key: 'brilliant', color: '#1baaa6', symbol: '!!' },
+                        { label: 'Critical', key: 'critical', color: '#5b8baf', symbol: '!' },
+                        { label: 'Best', key: 'best', color: '#98bc49', symbol: '*' },
+                        { label: 'Excellent', key: 'excellent', color: '#98bc49', symbol: '!' },
+                        { label: 'Theory', key: 'theory', color: '#a88764', symbol: 'T' },
+                        { label: 'Okay', key: 'okay', color: '#97af8b', symbol: '' },
+                        { label: 'Inaccuracy', key: 'inaccuracy', color: '#f4bf44', symbol: '?!' },
+                        { label: 'Mistake', key: 'mistake', color: '#e28c28', symbol: '?' },
+                        { label: 'Miss', key: 'miss', color: '#ff7769', symbol: 'x' },
+                        { label: 'Blunder', key: 'blunder', color: '#c93230', symbol: '??' },
+                      ].map(c => {
+                        let whiteCount = 0; let blackCount = 0;
+                        analysisReport.moveAnalyses.forEach((ma, i) => {
+                          if (ma.classification === c.key) { i % 2 === 0 ? whiteCount++ : blackCount++; }
+                        });
+                        return { ...c, whiteCount, blackCount };
+                      }).filter(c => c.whiteCount > 0 || c.blackCount > 0); // Only show relevant ones
+
+                      const whiteAcc = analysisReport.whiteAccuracy;
+                      const blackAcc = analysisReport.blackAccuracy;
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexGrow: 1 }}>
+
+                          {/* ── 1. EVALUATION GRAPH ── */}
+                          <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--luxury-border)', backgroundColor: '#1A1E26' }}>
+                            <div style={{ fontSize: '10px', fontWeight: '700', color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '4px 0 0', letterSpacing: '1px', textTransform: 'uppercase' }}>Evaluation Graph</div>
+                            <svg width="100%" viewBox={`0 0 ${graphW} ${graphH}`} preserveAspectRatio="none" style={{ display: 'block', height: '80px' }}>
+                              {/* Background halves */}
+                              <rect x="0" y="0" width={graphW} height={midY} fill="rgba(236,239,244,0.08)" />
+                              <rect x="0" y={midY} width={graphW} height={midY} fill="rgba(92,100,121,0.15)" />
+                              {/* Mid line */}
+                              <line x1="0" y1={midY} x2={graphW} y2={midY} stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                              {/* Filled area */}
+                              {areaPath && <path d={areaPath} fill="rgba(236,239,244,0.25)" />}
+                              {/* Line */}
+                              {evalData.length > 1 && <polyline points={points} fill="none" stroke="#ECEFF4" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
+                              {/* Blunder dot */}
+                              {evalData.length > 10 && (
+                                <circle cx={(10 / (evalData.length - 1)) * graphW} cy={scaleY(evalData[10])} r="3.5" fill="#E53935" />
+                              )}
+                              {/* Mistake dot */}
+                              {evalData.length > 14 && (
+                                <circle cx={(14 / (evalData.length - 1)) * graphW} cy={scaleY(evalData[14])} r="3" fill="#FB8C00" />
+                              )}
+                            </svg>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px 4px', fontSize: '9px', color: 'rgba(255,255,255,0.3)' }}>
+                              <span>Move 1</span>
+                              <span>Move {history.length}</span>
+                            </div>
+                          </div>
+
+                          {/* ── 2. ACCURACIES CARD ── */}
+                          <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--luxury-border)' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--luxury-gold)', textAlign: 'center', padding: '8px', backgroundColor: 'var(--luxury-card-bg)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Accuracy</div>
+                            <div style={{ display: 'flex' }}>
+                              <div style={{ flex: 1, padding: '14px 8px', textAlign: 'center', backgroundColor: '#ECEFF4' }}>
+                                <div style={{ fontSize: '22px', fontWeight: '900', color: '#0a0a0a', fontFamily: 'monospace' }}>{whiteAcc.toFixed(1)}%</div>
+                                <div style={{ fontSize: '10px', color: 'rgba(10,10,10,0.6)', marginTop: '2px' }}>{selectedColor === 'white' ? 'You (White)' : 'Opponent (White)'}</div>
+                              </div>
+                              <div style={{ flex: 1, padding: '14px 8px', textAlign: 'center', backgroundColor: '#0a0a0a' }}>
+                                <div style={{ fontSize: '22px', fontWeight: '900', color: '#ECEFF4', fontFamily: 'monospace' }}>{blackAcc.toFixed(1)}%</div>
+                                <div style={{ fontSize: '10px', color: 'rgba(236,239,244,0.5)', marginTop: '2px' }}>{selectedColor === 'black' ? 'You (Black)' : 'Opponent (Black)'}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── 3. CLASSIFICATION COUNT TABLE ── */}
+                          <div style={{ borderRadius: '12px', backgroundColor: 'var(--luxury-card-bg)', border: '1px solid var(--luxury-border)', padding: '10px', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ width: '90px', textAlign: 'left', padding: '4px 4px', color: 'var(--luxury-text-muted)', fontWeight: '600', fontSize: '10px', textTransform: 'uppercase' }}>Type</th>
+                                  <th style={{ textAlign: 'center', padding: '4px', color: '#ECEFF4', fontWeight: '700', fontSize: '10px' }}>White</th>
+                                  <th style={{ width: '28px' }} />
+                                  <th style={{ textAlign: 'center', padding: '4px', color: '#5C6479', fontWeight: '700', fontSize: '10px', backgroundColor: isDarkMode ? 'transparent' : 'rgba(92,100,121,0.08)', borderRadius: '4px' }}>Black</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {classifs.map(c => (
+                                  <tr key={c.label} style={{ borderTop: '1px solid var(--luxury-border)' }}>
+                                    <td style={{ padding: '5px 4px', color: c.color, fontWeight: '600', fontSize: '11px' }}>{c.label}</td>
+                                    <td style={{ textAlign: 'center', padding: '5px 4px', fontWeight: '800', color: 'var(--ion-text-color)', fontFamily: 'monospace' }}>{c.whiteCount}</td>
+                                    <td style={{ textAlign: 'center', padding: '5px 2px' }}>
+                                      <span style={{ backgroundColor: c.color, color: '#FFF', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', fontWeight: '800' }}>{c.symbol}</span>
+                                    </td>
+                                    <td style={{ textAlign: 'center', padding: '5px 4px', fontWeight: '800', color: 'var(--ion-text-color)', fontFamily: 'monospace' }}>{c.blackCount}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                        </div>
+                      );
+                    })() : (
+                      <div style={{ backgroundColor: 'var(--luxury-card-bg)', borderRadius: '16px', padding: '16px', border: '1px solid var(--luxury-border)', flexGrow: 1, minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
+                        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--luxury-gold)' }}>AI Insights</h3>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto', flexGrow: 1 }}>
+                          {history.map((move, index) => {
+                            const ma = analysisReport?.moveAnalyses[index];
+                            const isCurrentMove = index === moveIndex - 1;
+                            
+                            const meta: any = {
+                              brilliant:  { color: '#1baaa6', symbol: '!!' },
+                              critical:   { color: '#5b8baf', symbol: '!' },
+                              best:       { color: '#98bc49', symbol: '*' },
+                              excellent:  { color: '#98bc49', symbol: '!' },
+                              okay:       { color: '#97af8b', symbol: '' },
+                              inaccuracy: { color: '#f4bf44', symbol: '?!' },
+                              mistake:    { color: '#e28c28', symbol: '?' },
+                              miss:       { color: '#ff7769', symbol: 'x' },
+                              blunder:    { color: '#c93230', symbol: '??' },
+                              theory:     { color: '#a88764', symbol: 'T' },
+                              none:       { color: 'var(--ion-text-color)', symbol: '' }
+                            };
+                            
+                            const cls = ma?.classification || 'none';
+                            const info = meta[cls];
+                            
+                            return (
+                              <span key={index} style={{ 
+                                padding: '3px 7px', 
+                                backgroundColor: isCurrentMove ? 'rgba(255, 255, 255, 0.15)' : 'var(--ion-background-color)', 
+                                border: isCurrentMove ? `1px solid ${info.color}` : '1px solid transparent',
+                                borderRadius: '6px', 
+                                color: cls === 'none' ? 'var(--ion-text-color)' : info.color, 
+                                fontWeight: cls !== 'okay' && cls !== 'none' ? '800' : 'normal', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '4px' 
+                              }}>
+                                {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
+                                {info.symbol && <span style={{ backgroundColor: info.color, color: '#FFF', borderRadius: '4px', padding: '0 4px', fontSize: '10px' }}>{info.symbol}</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {history.length > 10 && (
+                          <div style={{ marginTop: '12px', padding: '10px', backgroundColor: 'rgba(229, 57, 53, 0.1)', borderLeft: '3px solid #E53935', fontSize: '11px' }}>
+                            <strong>AI Coach:</strong> You mentioned looking for a fork here, but you missed that the opponent's Knight protected that square.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <IonGrid style={{ padding: 0 }}>
+                      <IonRow>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToFirst}><IonIcon slot="icon-only" icon={playSkipBackOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToPrev}><IonIcon slot="icon-only" icon={chevronBackOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToNext}><IonIcon slot="icon-only" icon={chevronForwardOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToLast}><IonIcon slot="icon-only" icon={playSkipForwardOutline} /></IonButton></IonCol>
+                      </IonRow>
+                    </IonGrid>
+                    
+                    <IonButton expand="block" color="medium" fill="clear" onClick={() => setIsReviewMode(false)}>Exit Review</IonButton>
+                  </>
+                ) : (chessRef.current.isGameOver() || gameStatus.toLowerCase().includes('resign') || gameStatus.toLowerCase().includes('draw') || gameStatus.toLowerCase().includes('wins on time') || gameStatus.toLowerCase().includes('game over')) ? (
+                  /* STATE 2: POST-GAME RESULT */
+                  <>
+                    <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--luxury-card-bg)', textAlign: 'center', border: '1px solid var(--luxury-gold)', boxShadow: '0 4px 12px rgba(199, 168, 76, 0.2)' }}>
+                      <h2 style={{ margin: '0', fontSize: '18px', color: 'var(--luxury-gold)' }}>{gameStatus}</h2>
+                    </div>
+
+                    <div style={{ backgroundColor: 'var(--luxury-card-bg)', borderRadius: '16px', padding: '16px', border: '1px solid var(--luxury-border)', flexGrow: 1, minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
+                      <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--luxury-gold)' }}>Game Summary</h3>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto' }}>
+                        {history.map((move, index) => (
+                          <span key={index} style={{ padding: '3px 7px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px' }}>
+                            {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {isAnalyzing ? (
+                      <div style={{ backgroundColor: 'var(--luxury-card-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--luxury-border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--luxury-gold)' }}>
+                          <span>Analyzing with Stockfish (Depth 16)...</span>
+                          <span>{analysisProgress}%</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${analysisProgress}%`, height: '100%', backgroundColor: 'var(--luxury-gold)', transition: 'width 0.3s ease' }}></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <IonButton expand="block" color="success" style={{ fontWeight: 'bold' }} onClick={runGameAnalysis}>
+                        ⭐ GAME REVIEW
+                      </IonButton>
+                    )}
+                    <IonButton expand="block" color="primary" fill="outline" onClick={startNewGame} disabled={isAnalyzing}>
+                      <IonIcon slot="start" icon={refreshOutline} />
+                      Rematch / New Game
+                    </IonButton>
+                  </>
+                ) : (
+                  /* STATE 1: LIVE GAMEPLAY */
+                  <>
+                    <div style={{ padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--luxury-card-bg)', fontSize: '13px', fontWeight: '600', textAlign: 'center', borderLeft: '4px solid var(--luxury-gold)' }}>
+                      {gameStatus}
+                    </div>
+
+                    <div style={{ backgroundColor: 'var(--luxury-card-bg)', borderRadius: '16px', padding: '16px', border: '1px solid var(--luxury-border)', flexGrow: 1, minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
+                      <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--luxury-gold)' }}>Moves Played</h3>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '160px', overflowY: 'auto' }}>
+                        {history.map((move, index) => (
+                          <span key={index} style={{ padding: '3px 7px', backgroundColor: 'var(--ion-background-color)', borderRadius: '6px' }}>
+                            {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <IonGrid style={{ padding: 0 }}>
+                      <IonRow>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToFirst} disabled={moveIndex === 0 || isEngineThinking}><IonIcon slot="icon-only" icon={playSkipBackOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToPrev} disabled={moveIndex === 0 || isEngineThinking}><IonIcon slot="icon-only" icon={chevronBackOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToNext} disabled={moveIndex >= history.length || isEngineThinking}><IonIcon slot="icon-only" icon={chevronForwardOutline} /></IonButton></IonCol>
+                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToLast} disabled={moveIndex >= history.length || isEngineThinking}><IonIcon slot="icon-only" icon={playSkipForwardOutline} /></IonButton></IonCol>
+                      </IonRow>
+                    </IonGrid>
+
+                    <IonGrid style={{ padding: 0 }}>
+                      <IonRow>
+                        <IonCol size="6">
+                          <IonButton expand="block" color="medium" fill="outline" disabled={isEngineThinking}>
+                            ½ Draw
+                          </IonButton>
+                        </IonCol>
+                        <IonCol size="6">
+                          <IonButton expand="block" color="danger" fill="outline" onClick={handleResign} disabled={isEngineThinking}>
+                            🏳 Resign
+                          </IonButton>
+                        </IonCol>
+                      </IonRow>
+                    </IonGrid>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                      <IonButton fill="clear" color="medium">
+                        <IonIcon icon={moonOutline} slot="icon-only" /> {/* Speaker icon mock */}
+                      </IonButton>
+                      
+                      <IonButton 
+                        fill={aiCoachEnabled ? "solid" : "outline"} 
+                        color={aiCoachEnabled ? (isMicRecording ? "danger" : "primary") : "medium"} 
+                        onClick={() => {
+                          if (currentUser?.isPremium) {
+                            setAiCoachEnabled(!aiCoachEnabled);
+                          } else {
+                            setToastMessage("Upgrade to Premium for AI Voice Coach");
+                          }
+                        }}
+                        style={{ fontSize: '10px', height: '30px' }}
+                      >
+                        <IonIcon icon={micOutline} slot="start" />
+                        {aiCoachEnabled ? (isMicRecording ? "Recording..." : "Coach ON") : "Coach OFF (Pro)"}
+                      </IonButton>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Column 3: Ad Banner Placeholder */}
