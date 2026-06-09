@@ -139,6 +139,7 @@ const PlayTab: React.FC = () => {
   const [isLobbyConnecting, setIsLobbyConnecting] = useState<boolean>(false);
 
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [showAllClassifs, setShowAllClassifs] = useState<boolean>(false);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [isReviewMode, setIsReviewMode] = useState<boolean>(false);
   const [reviewTab, setReviewTab] = useState<'report' | 'analysis'>('report');
@@ -268,71 +269,131 @@ const PlayTab: React.FC = () => {
     
     // Evaluate the starting position once
     const initialEvalData = await analyzeEngineRef.current.analyzePosition(tempChess.fen(), 16);
-    let prevScore = initialEvalData.type === 'mate' 
-       ? (initialEvalData.value === 0 ? -10000 : Math.sign(initialEvalData.value) * 10000) 
-       : initialEvalData.value;
+    let prevEvalData: { type: 'mate' | 'centipawn', value: number, bestMove?: string } = { 
+      type: initialEvalData.type as 'mate' | 'centipawn', 
+      value: initialEvalData.value, 
+      bestMove: initialEvalData.bestMove 
+    };
     let prevBestMove = initialEvalData.bestMove;
 
     for (let i = 0; i < history.length; i++) {
       // Make the move
-      tempChess.move(history[i]);
+      const moveSan = history[i];
+      const moveObj = tempChess.move(moveSan);
+      const playedMoveUCI = moveObj.from + moveObj.to + (moveObj.promotion || '');
+      const moveColor = moveObj.color; // 'w' or 'b'
 
       // Analyze the position AFTER the move
       const fenAfter = tempChess.fen();
-      let scoreAfter = 0;
-      let bestMoveAfter = '';
+      let evalAfterData: { type: 'mate' | 'centipawn', value: number, bestMove?: string };
       
       if (tempChess.isCheckmate()) {
-        scoreAfter = -10000; // The side to move (fenAfter) is mated
+        evalAfterData = { type: 'mate', value: 0 };
       } else if (tempChess.isDraw() || tempChess.isStalemate() || tempChess.isThreefoldRepetition() || tempChess.isInsufficientMaterial()) {
-        scoreAfter = 0; // Draw
+        evalAfterData = { type: 'centipawn', value: 0 };
       } else {
-        const evalAfter = await analyzeEngineRef.current.analyzePosition(fenAfter, 16);
-        scoreAfter = evalAfter.type === 'mate' 
-           ? (evalAfter.value === 0 ? -10000 : Math.sign(evalAfter.value) * 10000) 
-           : evalAfter.value;
-        bestMoveAfter = evalAfter.bestMove;
+        const analyzeRes = await analyzeEngineRef.current.analyzePosition(fenAfter, 16);
+        evalAfterData = { type: analyzeRes.type as 'mate' | 'centipawn', value: analyzeRes.value, bestMove: analyzeRes.bestMove };
       }
 
-      // Ensure evaluations are from White's perspective
-      const whiteEvalBefore = i % 2 === 0 ? prevScore : -prevScore;
-      const whiteEvalAfter = tempChess.turn() === 'w' ? scoreAfter : -scoreAfter;
-      evals.push(whiteEvalAfter);
+      // Convert engine evaluations to absolute (White's perspective)
+      const prevTurn = moveColor; 
+      const currTurn = tempChess.turn(); 
 
-      // Calculate CP loss for the player who just moved
-      // Win Probability formula identical to dummyProject's getExpectedPoints
-      const winProb = (cp: number) => 50 + 50 * (2 / (1 + Math.exp(-0.0035 * Math.max(-2000, Math.min(2000, cp)))) - 1);
+      const previousEvaluation = { 
+        type: prevEvalData.type, 
+        value: prevTurn === 'w' ? prevEvalData.value : -prevEvalData.value 
+      };
       
-      let pBefore = winProb(i % 2 === 0 ? whiteEvalBefore : -whiteEvalBefore); // Win prob for player who moved
-      let pAfter = winProb(i % 2 === 0 ? whiteEvalAfter : -whiteEvalAfter); 
-      
-      let loss = Math.max(0, pBefore - pAfter);
+      const currentEvaluation = { 
+        type: evalAfterData.type, 
+        value: currTurn === 'w' ? evalAfterData.value : -evalAfterData.value 
+      };
 
-      let classification: MoveClassification = 'okay'; // Default fallback
+      // Extract absolute numerical evaluation for the graph (evals array)
+      let absEvalForGraph = 0;
+      if (currentEvaluation.type === 'mate') {
+        absEvalForGraph = currentEvaluation.value === 0 ? (moveColor === 'w' ? 10000 : -10000) : Math.sign(currentEvaluation.value) * 10000;
+      } else {
+        absEvalForGraph = currentEvaluation.value;
+      }
+      evals.push(absEvalForGraph);
+
+      // Expected Points Logic (Dummy Project)
+      const getExpectedPoints = (ev: {type: string, value: number}, opts: {moveColour: 'w' | 'b'}) => {
+        if (ev.type === 'mate') {
+          if (ev.value === 0) return opts.moveColour === 'w' ? 1 : 0;
+          return ev.value > 0 ? 1 : 0;
+        } else {
+          return 1 / (1 + Math.exp(-0.0035 * ev.value));
+        }
+      };
+
+      const pointLoss = Math.max(0, 
+        (getExpectedPoints(previousEvaluation, { moveColour: moveColor === 'w' ? 'b' : 'w' }) 
+         - getExpectedPoints(currentEvaluation, { moveColour: moveColor })) 
+        * (moveColor === 'w' ? 1 : -1)
+      );
+
+      const lossForAcc = pointLoss * 100;
+
+      let classification: MoveClassification = 'okay';
+      const topMovePlayed = prevBestMove === playedMoveUCI;
       
-      // Strict point loss thresholds aligned exactly with dummyProject (multiplied by 100 for percentage)
-      if (loss < 1.0) classification = 'best'; // BEST (dummy < 0.01)
-      else if (loss < 4.5) classification = 'excellent'; // EXCELLENT (dummy < 0.045)
-      else if (loss < 8.0) classification = 'okay'; // OKAY (dummy < 0.08)
-      else if (loss < 12.0) classification = 'inaccuracy'; // INACCURACY (dummy < 0.12)
-      else if (loss < 22.0) classification = 'mistake'; // MISTAKE (dummy < 0.22)
-      else classification = 'blunder'; // BLUNDER (dummy >= 0.22)
+      if (tempChess.isCheckmate()) {
+        classification = 'best';
+      } else if (topMovePlayed) {
+        classification = 'best';
+      } else {
+        const previousSubjectiveValue = previousEvaluation.value * (moveColor === 'w' ? 1 : -1);
+        const subjectiveValue = currentEvaluation.value * (moveColor === 'w' ? 1 : -1);
+
+        if (previousEvaluation.type === 'mate' && currentEvaluation.type === 'mate') {
+            if (previousSubjectiveValue > 0 && subjectiveValue < 0) {
+                classification = subjectiveValue < -3 ? 'mistake' : 'blunder';
+            } else {
+                const mateLoss = (currentEvaluation.value - previousEvaluation.value) * (moveColor === 'w' ? 1 : -1);
+                if (mateLoss < 0 || (mateLoss === 0 && subjectiveValue < 0)) classification = 'best';
+                else if (mateLoss < 2) classification = 'excellent';
+                else if (mateLoss < 7) classification = 'okay';
+                else classification = 'inaccuracy';
+            }
+        } else if (previousEvaluation.type === 'mate' && currentEvaluation.type === 'centipawn') {
+            if (subjectiveValue >= 800) classification = 'excellent';
+            else if (subjectiveValue >= 400) classification = 'okay';
+            else if (subjectiveValue >= 200) classification = 'inaccuracy';
+            else if (subjectiveValue >= 0) classification = 'mistake';
+            else classification = 'blunder';
+        } else if (previousEvaluation.type === 'centipawn' && currentEvaluation.type === 'mate') {
+            if (subjectiveValue > 0) classification = 'best';
+            else if (subjectiveValue >= -2) classification = 'blunder';
+            else if (subjectiveValue >= -5) classification = 'mistake';
+            else classification = 'inaccuracy';
+        } else {
+            if (pointLoss < 0.01) classification = 'best';
+            else if (pointLoss < 0.045) classification = 'excellent';
+            else if (pointLoss < 0.08) classification = 'okay';
+            else if (pointLoss < 0.12) classification = 'inaccuracy';
+            else if (pointLoss < 0.22) classification = 'mistake';
+            else classification = 'blunder';
+        }
+      }
 
       // Specific exceptions
-      if (i < 4 && loss < 2.0) classification = 'theory'; // Opening book
-      else if (loss >= 12.0 && Math.abs(whiteEvalBefore) > 150 && Math.abs(whiteEvalAfter) < 50) {
+      if (i < 4 && pointLoss < 0.02) classification = 'theory'; // Opening book
+      else if (pointLoss >= 0.12 && Math.abs(previousEvaluation.value) > 150 && Math.abs(currentEvaluation.value) < 50) {
         classification = 'miss'; // Missed a big advantage
-      } else if (loss < 1.0 && Math.abs(whiteEvalBefore) < 200 && Math.abs(whiteEvalAfter) > 200) {
+      } else if (pointLoss < 0.01 && Math.abs(previousEvaluation.value) < 200 && Math.abs(currentEvaluation.value) > 200) {
         classification = 'brilliant';
-      } else if (loss < 1.0 && Math.abs(whiteEvalBefore) > 100 && Math.abs(whiteEvalAfter) > 100 && Math.sign(whiteEvalBefore) !== Math.sign(whiteEvalAfter)) {
+      } else if (pointLoss < 0.01 && Math.abs(previousEvaluation.value) > 100 && Math.abs(currentEvaluation.value) > 100 && Math.sign(previousEvaluation.value) !== Math.sign(currentEvaluation.value)) {
         classification = 'critical'; // Sharp turnaround move
       }
 
-      moveAnalyses.push({ classification, cpLoss: loss, eval: whiteEvalAfter, bestMoveUCI: prevBestMove });
+      moveAnalyses.push({ classification, cpLoss: lossForAcc, eval: absEvalForGraph, bestMoveUCI: prevBestMove || '' });
 
-      // Cache for next iteration (prevScore is always relative to the player to move next)
-      prevScore = scoreAfter;
-      prevBestMove = bestMoveAfter;
+      // Cache for next iteration
+      prevEvalData = evalAfterData;
+      prevBestMove = evalAfterData.bestMove;
       
       // Update progress
       setAnalysisProgress(Math.round(((i + 1) / history.length) * 100));
@@ -879,6 +940,28 @@ const PlayTab: React.FC = () => {
 
   return (
     <IonPage>
+      {isReviewMode && (
+        <style>
+          {`
+            @media (max-width: 768px) {
+              ion-tab-bar { display: none !important; }
+              ion-header { display: none !important; }
+              ion-content { --padding-bottom: 90px !important; }
+              
+              .mobile-review-nav {
+                position: fixed !important;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                padding: 10px 10px calc(10px + env(safe-area-inset-bottom)) 10px !important;
+                background-color: var(--ion-background-color) !important;
+                border-top: 1px solid var(--luxury-border) !important;
+                z-index: 1000;
+              }
+            }
+          `}
+        </style>
+      )}
       {/* Luxury Minimalist Header with dynamic theme toggle */}
       <IonHeader className="ion-no-border">
         <IonToolbar style={{ 
@@ -2053,7 +2136,8 @@ const PlayTab: React.FC = () => {
                     backgroundColor: 'var(--ion-background-color)', 
                     transition: 'background-color 0.3s ease',
                     flexGrow: 1,
-                    position: 'relative'
+                    position: 'relative',
+                    overflow: 'visible'
                   }}>
                     <Chessboard
                     position={gameFen}
@@ -2183,39 +2267,7 @@ const PlayTab: React.FC = () => {
                             }
                             
                             if (reviewedMove) {
-                              const ma = analysisReport.moveAnalyses[moveIndex - 1];
-                              if (ma && ma.classification !== 'none') {
-                                const meta: any = {
-                                  brilliant:  { color: '#1baaa6', symbol: '!!' },
-                                  critical:   { color: '#5b8baf', symbol: '!' },
-                                  best:       { color: '#98bc49', symbol: '*' },
-                                  excellent:  { color: '#98bc49', symbol: '!' },
-                                  okay:       { color: '#97af8b', symbol: 'ok' },
-                                  inaccuracy: { color: '#f4bf44', symbol: '?!' },
-                                  mistake:    { color: '#e28c28', symbol: '?' },
-                                  miss:       { color: '#ff7769', symbol: 'x' },
-                                  blunder:    { color: '#c93230', symbol: '??' },
-                                  theory:     { color: '#a88764', symbol: 'T' },
-                                  none:       { color: 'transparent', symbol: '' }
-                                };
-                                const cl = meta[ma.classification];
-                                if (cl && cl.symbol) {
-                                  const moveToSquare = reviewedMove.to;
-                                  const svgBadge = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="${cl.color}" stroke="#FFF" stroke-width="2"/><text x="14" y="19" font-size="12" font-family="Arial,sans-serif" font-weight="900" fill="#FFF" text-anchor="middle">${cl.symbol}</text></svg>`;
-                                  
-                                  const existingBg = styles[moveToSquare] ? styles[moveToSquare].backgroundImage : undefined;
-                                  const newBg = `url("data:image/svg+xml,${encodeURIComponent(svgBadge)}")`;
-
-                                  styles[moveToSquare] = {
-                                    ...styles[moveToSquare],
-                                    backgroundImage: existingBg ? `${newBg}, ${existingBg}` : newBg,
-                                    backgroundRepeat: existingBg ? 'no-repeat, no-repeat' : 'no-repeat',
-                                    backgroundPosition: existingBg ? 'top -2px right -2px, top 4px right 4px' : 'top -2px right -2px',
-                                    backgroundSize: existingBg ? '40%, 32%' : '40%',
-                                    zIndex: 100
-                                  };
-                                }
-                              }
+                              // Badge rendering is handled via floating overlay outside the Chessboard component
 
                               // Also highlight the from/to squares of the reviewed move
                               styles[reviewedMove.from] = {
@@ -2249,6 +2301,71 @@ const PlayTab: React.FC = () => {
                       return arrows;
                     })()}
                   />
+
+                  {/* Classification Badge Overlay - floating on top of the board */}
+                  {(() => {
+                    if (!isReviewMode || moveIndex <= 0 || !analysisReport) return null;
+                    
+                    const replayChess2 = new Chess();
+                    let revMove: any = null;
+                    for (let mi = 0; mi < moveIndex && mi < history.length; mi++) {
+                      revMove = replayChess2.move(history[mi]);
+                    }
+                    if (!revMove) return null;
+                    
+                    const ma = analysisReport.moveAnalyses[moveIndex - 1];
+                    if (!ma || ma.classification === 'none') return null;
+                    
+                    const badgeImages: any = {
+                      brilliant: '/assets/img/classifications/brilliant.png',
+                      critical: '/assets/img/classifications/critical.png',
+                      best: '/assets/img/classifications/best.png',
+                      excellent: '/assets/img/classifications/excellent.png',
+                      okay: '/assets/img/classifications/okay.png',
+                      inaccuracy: '/assets/img/classifications/inaccuracy.png',
+                      mistake: '/assets/img/classifications/mistake.png',
+                      miss: '/assets/img/classifications/miss.png',
+                      blunder: '/assets/img/classifications/blunder.png',
+                      theory: '/assets/img/classifications/theory.png',
+                    };
+                    
+                    const imgSrc = badgeImages[ma.classification];
+                    if (!imgSrc) return null;
+                    
+                    // Calculate position: square coordinates to percentage
+                    const file = revMove.to.charCodeAt(0) - 97; // a=0 .. h=7
+                    const rank = parseInt(revMove.to[1]) - 1;    // 1=0 .. 8=7
+                    const isFlipped = selectedColor === 'black';
+                    
+                    // Board origin is top-left. For white orientation: file goes left-right, rank 8 is top.
+                    const col = isFlipped ? (7 - file) : file;
+                    const row = isFlipped ? rank : (7 - rank);
+                    
+                    // Each square = 12.5%. Badge centered on top-right corner of square.
+                    // Top-right corner of square: left = (col+1)*12.5%, top = row*12.5%
+                    // Badge size = 45% of square = 5.625% of board. Center on corner = offset by half badge size.
+                    const badgeSizePct = 5.625; // 45% of 12.5%
+                    const leftPct = ((col + 1) * 12.5) - (badgeSizePct / 2);
+                    const topPct = (row * 12.5) - (badgeSizePct / 2);
+                    
+                    return (
+                      <img
+                        src={imgSrc}
+                        alt={ma.classification}
+                        style={{
+                          position: 'absolute',
+                          left: `${leftPct}%`,
+                          top: `${topPct}%`,
+                          width: `${badgeSizePct}%`,
+                          height: `${badgeSizePct}%`,
+                          zIndex: 1000,
+                          pointerEvents: 'none',
+                          filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.4))'
+                        }}
+                      />
+                    );
+                  })()}
+
                   </div>
                 </div>
 
@@ -2307,7 +2424,7 @@ const PlayTab: React.FC = () => {
                         { label: 'Brilliant', key: 'brilliant', color: '#1baaa6', symbol: '!!' },
                         { label: 'Critical', key: 'critical', color: '#5b8baf', symbol: '!' },
                         { label: 'Best', key: 'best', color: '#98bc49', symbol: '*' },
-                        { label: 'Excellent', key: 'excellent', color: '#98bc49', symbol: '!' },
+                        { label: 'Excellent', key: 'excellent', color: '#81B64C', symbol: '!' },
                         { label: 'Theory', key: 'theory', color: '#a88764', symbol: 'T' },
                         { label: 'Okay', key: 'okay', color: '#97af8b', symbol: '' },
                         { label: 'Inaccuracy', key: 'inaccuracy', color: '#f4bf44', symbol: '?!' },
@@ -2320,7 +2437,7 @@ const PlayTab: React.FC = () => {
                           if (ma.classification === c.key) { i % 2 === 0 ? whiteCount++ : blackCount++; }
                         });
                         return { ...c, whiteCount, blackCount };
-                      }).filter(c => c.whiteCount > 0 || c.blackCount > 0); // Only show relevant ones
+                      });
 
                       const whiteAcc = analysisReport.whiteAccuracy;
                       const blackAcc = analysisReport.blackAccuracy;
@@ -2341,14 +2458,44 @@ const PlayTab: React.FC = () => {
                               {areaPath && <path d={areaPath} fill="rgba(236,239,244,0.25)" />}
                               {/* Line */}
                               {evalData.length > 1 && <polyline points={points} fill="none" stroke="#ECEFF4" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
-                              {/* Blunder dot */}
-                              {evalData.length > 10 && (
-                                <circle cx={(10 / (evalData.length - 1)) * graphW} cy={scaleY(evalData[10])} r="3.5" fill="#E53935" />
+                              {/* Selected point highlight */}
+                              {moveIndex > 0 && moveIndex <= evalData.length && (
+                                <>
+                                  <line 
+                                    x1={((moveIndex - 1) / (Math.max(1, evalData.length - 1))) * graphW} 
+                                    y1={0} 
+                                    x2={((moveIndex - 1) / (Math.max(1, evalData.length - 1))) * graphW} 
+                                    y2={graphH} 
+                                    stroke="rgba(255,255,255,0.4)" 
+                                    strokeWidth="1" 
+                                  />
+                                  <circle 
+                                    cx={((moveIndex - 1) / (Math.max(1, evalData.length - 1))) * graphW} 
+                                    cy={scaleY(evalData[moveIndex - 1])} 
+                                    r="4" 
+                                    fill="var(--luxury-gold)" 
+                                  />
+                                </>
                               )}
-                              {/* Mistake dot */}
-                              {evalData.length > 14 && (
-                                <circle cx={(14 / (evalData.length - 1)) * graphW} cy={scaleY(evalData[14])} r="3" fill="#FB8C00" />
-                              )}
+                              {/* Dynamic dots for classifications */}
+                              {evalData.map((val, i) => {
+                                if (i === 0) return null;
+                                const ma = analysisReport.moveAnalyses[i - 1];
+                                if (!ma) return null;
+                                const highlighted = ['brilliant', 'critical', 'inaccuracy', 'mistake', 'blunder'].includes(ma.classification);
+                                if (!highlighted) return null;
+                                
+                                const colorMap: any = {
+                                  brilliant: '#1baaa6',
+                                  critical: '#5b8baf',
+                                  inaccuracy: '#f4bf44',
+                                  mistake: '#e28c28',
+                                  blunder: '#c93230'
+                                };
+                                const cx = (i / (evalData.length - 1)) * graphW;
+                                const cy = scaleY(val);
+                                return <circle key={`dot-${i}`} cx={cx} cy={cy} r="3" fill={colorMap[ma.classification]} />;
+                              })}
                             </svg>
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px 4px', fontSize: '9px', color: 'rgba(255,255,255,0.3)' }}>
                               <span>Move 1</span>
@@ -2383,18 +2530,30 @@ const PlayTab: React.FC = () => {
                                 </tr>
                               </thead>
                               <tbody>
-                                {classifs.map(c => (
+                                {(showAllClassifs ? classifs : classifs.slice(0, classifs.length - 4)).map(c => (
                                   <tr key={c.label} style={{ borderTop: '1px solid var(--luxury-border)' }}>
                                     <td style={{ padding: '5px 4px', color: c.color, fontWeight: '600', fontSize: '11px' }}>{c.label}</td>
                                     <td style={{ textAlign: 'center', padding: '5px 4px', fontWeight: '800', color: 'var(--ion-text-color)', fontFamily: 'monospace' }}>{c.whiteCount}</td>
                                     <td style={{ textAlign: 'center', padding: '5px 2px' }}>
-                                      <span style={{ backgroundColor: c.color, color: '#FFF', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', fontWeight: '800' }}>{c.symbol}</span>
+                                      {c.key === 'none' ? (
+                                        c.symbol ? <span style={{ backgroundColor: c.color, color: '#FFF', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', fontWeight: '800' }}>{c.symbol}</span> : null
+                                      ) : (
+                                        <img src={`/assets/img/classifications/${c.key}.png`} alt={c.key} style={{ width: '16px', height: '16px', verticalAlign: 'middle' }} />
+                                      )}
                                     </td>
                                     <td style={{ textAlign: 'center', padding: '5px 4px', fontWeight: '800', color: 'var(--ion-text-color)', fontFamily: 'monospace' }}>{c.blackCount}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
+                            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+                              <span 
+                                onClick={() => setShowAllClassifs(!showAllClassifs)} 
+                                style={{ fontSize: '10px', color: 'var(--luxury-text-muted)', textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                {showAllClassifs ? 'view less' : 'view more'}
+                              </span>
+                            </div>
                           </div>
 
                         </div>
@@ -2411,7 +2570,7 @@ const PlayTab: React.FC = () => {
                               brilliant:  { color: '#1baaa6', symbol: '!!' },
                               critical:   { color: '#5b8baf', symbol: '!' },
                               best:       { color: '#98bc49', symbol: '*' },
-                              excellent:  { color: '#98bc49', symbol: '!' },
+                              excellent:  { color: '#81B64C', symbol: '!' },
                               okay:       { color: '#97af8b', symbol: '' },
                               inaccuracy: { color: '#f4bf44', symbol: '?!' },
                               mistake:    { color: '#e28c28', symbol: '?' },
@@ -2431,13 +2590,15 @@ const PlayTab: React.FC = () => {
                                 border: isCurrentMove ? `1px solid ${info.color}` : '1px solid transparent',
                                 borderRadius: '6px', 
                                 color: cls === 'none' ? 'var(--ion-text-color)' : info.color, 
-                                fontWeight: cls !== 'okay' && cls !== 'none' ? '800' : 'normal', 
+                                fontWeight: cls !== 'none' ? '800' : 'normal', 
                                 display: 'flex', 
                                 alignItems: 'center', 
                                 gap: '4px' 
                               }}>
                                 {index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move}
-                                {info.symbol && <span style={{ backgroundColor: info.color, color: '#FFF', borderRadius: '4px', padding: '0 4px', fontSize: '10px' }}>{info.symbol}</span>}
+                                {cls !== 'none' && (
+                                  <img src={`/assets/img/classifications/${cls}.png`} alt={cls} style={{ width: '14px', height: '14px' }} />
+                                )}
                               </span>
                             );
                           })}
@@ -2450,16 +2611,18 @@ const PlayTab: React.FC = () => {
                       </div>
                     )}
 
-                    <IonGrid style={{ padding: 0 }}>
-                      <IonRow>
-                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToFirst}><IonIcon slot="icon-only" icon={playSkipBackOutline} /></IonButton></IonCol>
-                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToPrev}><IonIcon slot="icon-only" icon={chevronBackOutline} /></IonButton></IonCol>
-                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToNext}><IonIcon slot="icon-only" icon={chevronForwardOutline} /></IonButton></IonCol>
-                        <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToLast}><IonIcon slot="icon-only" icon={playSkipForwardOutline} /></IonButton></IonCol>
-                      </IonRow>
-                    </IonGrid>
-                    
-                    <IonButton expand="block" color="medium" fill="clear" onClick={() => setIsReviewMode(false)}>Exit Review</IonButton>
+                    <div className="mobile-review-nav">
+                      <IonGrid style={{ padding: 0 }}>
+                        <IonRow>
+                          <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToFirst}><IonIcon slot="icon-only" icon={playSkipBackOutline} /></IonButton></IonCol>
+                          <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToPrev}><IonIcon slot="icon-only" icon={chevronBackOutline} /></IonButton></IonCol>
+                          <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToNext}><IonIcon slot="icon-only" icon={chevronForwardOutline} /></IonButton></IonCol>
+                          <IonCol size="3"><IonButton expand="block" color="medium" fill="outline" onClick={goToLast}><IonIcon slot="icon-only" icon={playSkipForwardOutline} /></IonButton></IonCol>
+                        </IonRow>
+                      </IonGrid>
+                      
+                      <IonButton expand="block" color="medium" fill="clear" onClick={() => setIsReviewMode(false)} style={{ marginTop: '4px' }}>Exit Review</IonButton>
+                    </div>
                   </>
                 ) : (chessRef.current.isGameOver() || gameStatus.toLowerCase().includes('resign') || gameStatus.toLowerCase().includes('draw') || gameStatus.toLowerCase().includes('wins on time') || gameStatus.toLowerCase().includes('game over')) ? (
                   /* STATE 2: POST-GAME RESULT */
