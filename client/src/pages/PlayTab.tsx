@@ -393,7 +393,7 @@ const PlayTab: React.FC = () => {
 
       // Cache for next iteration
       prevEvalData = evalAfterData;
-      prevBestMove = evalAfterData.bestMove;
+      prevBestMove = evalAfterData.bestMove ?? '';
       
       // Update progress
       setAnalysisProgress(Math.round(((i + 1) / history.length) * 100));
